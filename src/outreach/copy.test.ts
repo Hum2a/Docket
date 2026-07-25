@@ -22,6 +22,7 @@ function baseLead(over: Partial<CopyLeadInput> = {}): CopyLeadInput {
     contactName: "Jane Smith",
     websiteUrl: "https://www.acme-accountants.co.uk",
     demoUrl: "https://acme-accountants.humza-butt.space",
+    demoExpiresAt: null,
     offerAmount: 500,
     audit: {},
     ...over,

@@ -81,6 +81,7 @@ function baseLead(over: Partial<Lead> = {}): Lead {
     scoreReason: null,
     demoUrl: "https://acme-ltd.example-demos.test",
     demoBuiltAt: null,
+    demoExpiresAt: null,
     demoStatus: "ready",
     status: "demo_ready",
     sentAt: null,

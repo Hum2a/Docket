@@ -1,4 +1,4 @@
-export type SendResult = { sent: boolean; reason?: string };
+export type SendResult = { sent: boolean; reason?: string; id?: string };
 
 /** Verified domain sender for Docket. */
 export const DEFAULT_FROM = "Docket <Docket@Humza-Butt.space>";
@@ -35,6 +35,11 @@ export async function sendResendEmail(opts: {
   html?: string;
   text?: string;
   headers?: Record<string, string>;
+  /**
+   * Outreach only: ask Resend not to inject open/click tracking.
+   * Job digests leave this unset (domain defaults apply).
+   */
+  disableTracking?: boolean;
 }): Promise<SendResult> {
   if (!opts.apiKey) {
     return { sent: false, reason: "RESEND_API_KEY not configured" };
@@ -66,6 +71,11 @@ export async function sendResendEmail(opts: {
   if (opts.headers && Object.keys(opts.headers).length > 0) {
     payload.headers = opts.headers;
   }
+  // Per-email tracking flags (Resend: off by default on domain; set explicitly for outreach).
+  if (opts.disableTracking) {
+    payload.open_tracking = false;
+    payload.click_tracking = false;
+  }
 
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -77,9 +87,31 @@ export async function sendResendEmail(opts: {
   });
 
   if (!res.ok) {
-    const text = await res.text();
-    return { sent: false, reason: `Resend error: ${text}` };
+    const errText = await res.text();
+    // Older Resend schemas may reject unknown tracking keys — retry once without them.
+    if (
+      opts.disableTracking &&
+      /open_tracking|click_tracking|unknown|unexpected/i.test(errText)
+    ) {
+      delete payload.open_tracking;
+      delete payload.click_tracking;
+      const retry = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${opts.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!retry.ok) {
+        return { sent: false, reason: `Resend error: ${await retry.text()}` };
+      }
+      const retryData = (await retry.json().catch(() => null)) as { id?: string } | null;
+      return { sent: true, id: retryData?.id };
+    }
+    return { sent: false, reason: `Resend error: ${errText}` };
   }
 
-  return { sent: true };
+  const data = (await res.json().catch(() => null)) as { id?: string } | null;
+  return { sent: true, id: data?.id };
 }

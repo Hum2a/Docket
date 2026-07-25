@@ -103,6 +103,7 @@ export type Lead = {
   scoreReason: string | null;
   demoUrl: string | null;
   demoBuiltAt: string | null;
+  demoExpiresAt: string | null;
   demoStatus: string;
   status: LeadStatus;
   sentAt: string | null;
@@ -133,6 +134,14 @@ export type OutreachSettings = {
   pausedUntil: string | null;
   updatedAt: string;
 };
+
+export const DEMO_EXPIRY_DAYS = 30;
+
+export function demoExpiresAtFrom(now: Date = new Date()): string {
+  const d = new Date(now.getTime());
+  d.setUTCDate(d.getUTCDate() + DEMO_EXPIRY_DAYS);
+  return d.toISOString();
+}
 
 export function slugifyName(name: string): string {
   return name

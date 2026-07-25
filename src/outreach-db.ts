@@ -1,7 +1,7 @@
 import type { Sql } from "./db";
 import { toDateOnly } from "./db";
 import type { CreateLead, Lead, LeadStatus, OutreachSettings, UpdateLead } from "../shared/outreach";
-import { slugifyName } from "../shared/outreach";
+import { demoExpiresAtFrom, slugifyName } from "../shared/outreach";
 import { normalizeBusinessKey, planBulkUpserts } from "./outreach/bulkUpsert";
 import { canAutoSend } from "./outreach/canAutoSend";
 
@@ -45,6 +45,7 @@ function mapLead(row: LeadRow): Lead {
     scoreReason: (row.score_reason as string) ?? null,
     demoUrl: (row.demo_url as string) ?? null,
     demoBuiltAt: row.demo_built_at ? String(row.demo_built_at) : null,
+    demoExpiresAt: row.demo_expires_at ? String(row.demo_expires_at) : null,
     demoStatus: String(row.demo_status ?? "none"),
     status: String(row.status) as LeadStatus,
     sentAt: row.sent_at ? String(row.sent_at) : null,
@@ -181,6 +182,8 @@ export async function createLead(sql: Sql, input: CreateLead): Promise<Lead> {
   const corporate =
     input.corporateSubscriber ??
     ["ltd", "llp", "scottish_partnership", "public_body"].includes(entityType);
+  const demoStatus = input.demoStatus ?? "none";
+  const demoExpiresAt = demoStatus === "ready" ? demoExpiresAtFrom() : null;
 
   const rows = (await sql`
     INSERT INTO leads (
@@ -189,7 +192,7 @@ export async function createLead(sql: Sql, input: CreateLead): Promise<Lead> {
       email_source, email_verified, website_url, has_website,
       companies_house_number, entity_type, corporate_subscriber, ch_status, incorporated_on,
       audit, need_score, likelihood_score, priority_score, score_reason,
-      demo_url, demo_built_at, demo_status, status, offer_amount, source, source_ref
+      demo_url, demo_built_at, demo_expires_at, demo_status, status, offer_amount, source, source_ref
     ) VALUES (
       ${input.businessName}, ${slug}, ${input.industry ?? null}, ${input.location ?? null},
       ${input.postcode ?? null}, ${input.address ?? null},
@@ -201,7 +204,7 @@ export async function createLead(sql: Sql, input: CreateLead): Promise<Lead> {
       ${JSON.stringify(input.audit ?? {})}::jsonb,
       ${input.needScore ?? null}, ${input.likelihoodScore ?? null}, ${input.priorityScore ?? null},
       ${input.scoreReason ?? null}, ${input.demoUrl ?? null}, ${input.demoBuiltAt ?? null},
-      ${input.demoStatus ?? "none"}, ${input.status ?? "sourced"}, ${input.offerAmount ?? 500},
+      ${demoExpiresAt}, ${demoStatus}, ${input.status ?? "sourced"}, ${input.offerAmount ?? 500},
       ${input.source ?? null}, ${input.sourceRef ?? null}
     )
     RETURNING *
@@ -254,6 +257,12 @@ export async function updateLead(sql: Sql, id: number, updates: UpdateLead): Pro
     sourceRef: updates.sourceRef !== undefined ? updates.sourceRef : existing.sourceRef,
   };
 
+  const becomingReady =
+    merged.demoStatus === "ready" && existing.demoStatus !== "ready";
+  const demoExpiresAt = becomingReady
+    ? demoExpiresAtFrom()
+    : existing.demoExpiresAt;
+
   const rows = (await sql`
     UPDATE leads SET
       business_name = ${merged.businessName},
@@ -282,6 +291,7 @@ export async function updateLead(sql: Sql, id: number, updates: UpdateLead): Pro
       score_reason = ${merged.scoreReason},
       demo_url = ${merged.demoUrl},
       demo_built_at = ${merged.demoBuiltAt},
+      demo_expires_at = ${demoExpiresAt},
       demo_status = ${merged.demoStatus},
       status = ${merged.status},
       offer_amount = ${merged.offerAmount},
@@ -554,6 +564,24 @@ export async function listLeadMessages(sql: Sql, leadId: number) {
     error: (r.error as string) ?? null,
     createdAt: String(r.created_at),
   }));
+}
+
+/** Provider id from the first successful initial outbound, for threading headers. */
+export async function getInitialOutboundProviderId(
+  sql: Sql,
+  leadId: number
+): Promise<string | null> {
+  const rows = (await sql`
+    SELECT provider_message_id FROM lead_messages
+    WHERE lead_id = ${leadId}
+      AND direction = 'out'
+      AND template_id = 'initial'
+      AND provider_message_id IS NOT NULL
+      AND provider_message_id <> ''
+    ORDER BY created_at ASC
+    LIMIT 1
+  `) as { provider_message_id: string }[];
+  return rows[0]?.provider_message_id ?? null;
 }
 
 export async function getLeadMessageByIdempotency(sql: Sql, key: string) {

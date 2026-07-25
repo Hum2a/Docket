@@ -4,6 +4,7 @@ import type { Lead, OutreachSettings } from "../shared/outreach";
 import {
   countSentToday,
   createLeadReminder,
+  getInitialOutboundProviderId,
   getLeadMessageByIdempotency,
   insertLeadMessage,
   isSuppressed,
@@ -74,9 +75,16 @@ function toCopyLead(lead: Lead): CopyLeadInput {
     contactName: lead.contactName,
     websiteUrl: lead.websiteUrl,
     demoUrl: lead.demoUrl,
+    demoExpiresAt: lead.demoExpiresAt,
     offerAmount: Number(lead.offerAmount || 500),
     audit: lead.audit || {},
   };
+}
+
+function messageIdHeader(providerId: string): string {
+  const id = providerId.trim();
+  if (id.startsWith("<") && id.endsWith(">")) return id;
+  return `<${id}>`;
 }
 
 export async function signUnsubscribeToken(
@@ -259,6 +267,19 @@ export async function sendLeadOutreach(opts: {
   const text = rendered.text;
   const replyTo = settings.replyTo || env.OUTREACH_REPLY_TO || undefined;
 
+  const threadHeaders: Record<string, string> = {
+    "List-Unsubscribe": `<${unsubUrl}>`,
+    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+  };
+  if (templateId !== "initial") {
+    const initialProviderId = await getInitialOutboundProviderId(sql, lead.id);
+    if (initialProviderId) {
+      const mid = messageIdHeader(initialProviderId);
+      threadHeaders["In-Reply-To"] = mid;
+      threadHeaders.References = mid;
+    }
+  }
+
   async function persistAuditOnInitial() {
     if (templateId !== "initial" || !rendered.variant) return;
     const audit = {
@@ -301,10 +322,8 @@ export async function sendLeadOutreach(opts: {
     replyTo,
     subject: rendered.subject,
     text,
-    headers: {
-      "List-Unsubscribe": `<${unsubUrl}>`,
-      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-    },
+    headers: threadHeaders,
+    disableTracking: true,
   });
 
   if (!result.sent) {
@@ -339,6 +358,7 @@ export async function sendLeadOutreach(opts: {
     body: text,
     templateId,
     variant: rendered.variant,
+    providerMessageId: result.id ?? null,
     idempotencyKey,
     status: "sent",
     sentAt: new Date().toISOString(),

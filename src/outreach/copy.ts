@@ -34,6 +34,8 @@ export type CopyLeadInput = {
   contactName: string | null;
   websiteUrl: string | null;
   demoUrl: string | null;
+  /** ISO timestamp; when set, final email uses this instead of now+3d. */
+  demoExpiresAt: string | null;
   offerAmount: number;
   audit: Record<string, unknown>;
 };
@@ -421,7 +423,9 @@ export function renderFinal(opts: {
 }): RenderedOutreach {
   const { lead, postalAddress, unsubscribeUrl, originalSubject, signal } = opts;
   const demo = demoUrlFor(lead);
-  const expiry = formatExpiryDate(opts.now ?? new Date(), 3);
+  const expiry = lead.demoExpiresAt
+    ? formatExpiryDate(new Date(lead.demoExpiresAt), 0)
+    : formatExpiryDate(opts.now ?? new Date(), 3);
   const reSubject = originalSubject.startsWith("Re:")
     ? originalSubject
     : `Re: ${originalSubject}`;
