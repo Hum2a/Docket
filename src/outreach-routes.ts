@@ -134,9 +134,15 @@ outreachApp.patch("/api/leads/:id", requireApiKey, async (c) => {
   const parsed = updateLeadSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
   const sql = getSql(c.env.DATABASE_URL);
-  const lead = await updateLead(sql, id, parsed.data);
-  if (!lead) return c.json({ error: "not found" }, 404);
-  return c.json(lead);
+  try {
+    const lead = await updateLead(sql, id, parsed.data);
+    if (!lead) return c.json({ error: "not found" }, 404);
+    return c.json(lead);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(JSON.stringify({ msg: "patch_lead_failed", id, message }));
+    return c.json({ error: "update_failed", message }, 500);
+  }
 });
 
 outreachApp.delete("/api/leads/:id", requireApiKey, async (c) => {

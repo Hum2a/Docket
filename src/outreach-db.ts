@@ -313,92 +313,74 @@ export async function updateLead(sql: Sql, id: number, updates: UpdateLead): Pro
   const existing = await getLeadById(sql, id);
   if (!existing) return null;
 
-  const merged = {
-    businessName: updates.businessName ?? existing.businessName,
-    slug: updates.slug ?? existing.slug,
-    industry: updates.industry !== undefined ? updates.industry : existing.industry,
-    location: updates.location !== undefined ? updates.location : existing.location,
-    postcode: updates.postcode !== undefined ? updates.postcode : existing.postcode,
-    address: updates.address !== undefined ? updates.address : existing.address,
-    contactName: updates.contactName !== undefined ? updates.contactName : existing.contactName,
-    contactEmail: updates.contactEmail !== undefined ? updates.contactEmail : existing.contactEmail,
-    contactPhone: updates.contactPhone !== undefined ? updates.contactPhone : existing.contactPhone,
-    contactFormUrl:
-      updates.contactFormUrl !== undefined ? updates.contactFormUrl : existing.contactFormUrl,
-    emailSource: updates.emailSource !== undefined ? updates.emailSource : existing.emailSource,
-    emailVerified: updates.emailVerified ?? existing.emailVerified,
-    websiteUrl: updates.websiteUrl !== undefined ? updates.websiteUrl : existing.websiteUrl,
-    hasWebsite: updates.hasWebsite ?? existing.hasWebsite,
-    companiesHouseNumber:
-      updates.companiesHouseNumber !== undefined
-        ? updates.companiesHouseNumber
-        : existing.companiesHouseNumber,
-    entityType: updates.entityType ?? existing.entityType,
-    corporateSubscriber: updates.corporateSubscriber ?? existing.corporateSubscriber,
-    chStatus: updates.chStatus !== undefined ? updates.chStatus : existing.chStatus,
-    incorporatedOn:
-      updates.incorporatedOn !== undefined ? updates.incorporatedOn : existing.incorporatedOn,
-    audit: updates.audit ?? existing.audit,
-    needScore: updates.needScore !== undefined ? updates.needScore : existing.needScore,
-    likelihoodScore:
-      updates.likelihoodScore !== undefined ? updates.likelihoodScore : existing.likelihoodScore,
-    priorityScore:
-      updates.priorityScore !== undefined ? updates.priorityScore : existing.priorityScore,
-    scoreReason: updates.scoreReason !== undefined ? updates.scoreReason : existing.scoreReason,
-    demoUrl: updates.demoUrl !== undefined ? updates.demoUrl : existing.demoUrl,
-    demoBuiltAt: updates.demoBuiltAt !== undefined ? updates.demoBuiltAt : existing.demoBuiltAt,
-    demoStatus: updates.demoStatus ?? existing.demoStatus,
-    status: updates.status ?? existing.status,
-    offerAmount: updates.offerAmount ?? existing.offerAmount,
-    source: updates.source !== undefined ? updates.source : existing.source,
-    sourceRef: updates.sourceRef !== undefined ? updates.sourceRef : existing.sourceRef,
+  const nextDemoStatus = updates.demoStatus ?? existing.demoStatus;
+  const becomingReady = nextDemoStatus === "ready" && existing.demoStatus !== "ready";
+
+  // Partial UPDATE — only touch fields present on `updates` (plus demo expiry when
+  // becoming ready). Avoids rewriting every column and the fragile `${json}::jsonb`
+  // cast on the Workers neon HTTP driver when audit is unchanged.
+  const sets: string[] = [];
+  const values: unknown[] = [];
+  const add = (col: string, value: unknown) => {
+    values.push(value);
+    sets.push(`${col} = $${values.length}`);
   };
 
-  const becomingReady =
-    merged.demoStatus === "ready" && existing.demoStatus !== "ready";
-  const demoExpiresAt = becomingReady
-    ? demoExpiresAtFrom()
-    : existing.demoExpiresAt;
+  if (updates.businessName !== undefined) add("business_name", updates.businessName);
+  if (updates.slug !== undefined) add("slug", updates.slug);
+  if (updates.industry !== undefined) add("industry", updates.industry);
+  if (updates.location !== undefined) add("location", updates.location);
+  if (updates.postcode !== undefined) add("postcode", updates.postcode);
+  if (updates.address !== undefined) add("address", updates.address);
+  if (updates.contactName !== undefined) add("contact_name", updates.contactName);
+  if (updates.contactEmail !== undefined) add("contact_email", updates.contactEmail);
+  if (updates.contactPhone !== undefined) add("contact_phone", updates.contactPhone);
+  if (updates.contactFormUrl !== undefined) add("contact_form_url", updates.contactFormUrl);
+  if (updates.emailSource !== undefined) add("email_source", updates.emailSource);
+  if (updates.emailVerified !== undefined) add("email_verified", updates.emailVerified);
+  if (updates.websiteUrl !== undefined) add("website_url", updates.websiteUrl);
+  if (updates.hasWebsite !== undefined) add("has_website", updates.hasWebsite);
+  if (updates.companiesHouseNumber !== undefined) {
+    add("companies_house_number", updates.companiesHouseNumber);
+  }
+  if (updates.entityType !== undefined) add("entity_type", updates.entityType);
+  if (updates.corporateSubscriber !== undefined) {
+    add("corporate_subscriber", updates.corporateSubscriber);
+  }
+  if (updates.chStatus !== undefined) add("ch_status", updates.chStatus);
+  if (updates.incorporatedOn !== undefined) add("incorporated_on", updates.incorporatedOn);
+  if (updates.audit !== undefined) {
+    values.push(JSON.stringify(updates.audit));
+    sets.push(`audit = $${values.length}::jsonb`);
+  }
+  if (updates.needScore !== undefined) add("need_score", updates.needScore);
+  if (updates.likelihoodScore !== undefined) add("likelihood_score", updates.likelihoodScore);
+  if (updates.priorityScore !== undefined) add("priority_score", updates.priorityScore);
+  if (updates.scoreReason !== undefined) add("score_reason", updates.scoreReason);
+  if (updates.demoUrl !== undefined) add("demo_url", updates.demoUrl);
+  if (updates.demoBuiltAt !== undefined) add("demo_built_at", updates.demoBuiltAt);
+  if (updates.demoStatus !== undefined) add("demo_status", updates.demoStatus);
+  if (updates.status !== undefined) add("status", updates.status);
+  if (updates.offerAmount !== undefined) add("offer_amount", updates.offerAmount);
+  if (updates.source !== undefined) add("source", updates.source);
+  if (updates.sourceRef !== undefined) add("source_ref", updates.sourceRef);
 
-  const rows = (await sql`
-    UPDATE leads SET
-      business_name = ${merged.businessName},
-      slug = ${merged.slug},
-      industry = ${merged.industry},
-      location = ${merged.location},
-      postcode = ${merged.postcode},
-      address = ${merged.address},
-      contact_name = ${merged.contactName},
-      contact_email = ${merged.contactEmail},
-      contact_phone = ${merged.contactPhone},
-      contact_form_url = ${merged.contactFormUrl},
-      email_source = ${merged.emailSource},
-      email_verified = ${merged.emailVerified},
-      website_url = ${merged.websiteUrl},
-      has_website = ${merged.hasWebsite},
-      companies_house_number = ${merged.companiesHouseNumber},
-      entity_type = ${merged.entityType},
-      corporate_subscriber = ${merged.corporateSubscriber},
-      ch_status = ${merged.chStatus},
-      incorporated_on = ${merged.incorporatedOn},
-      audit = ${JSON.stringify(merged.audit)}::jsonb,
-      need_score = ${merged.needScore},
-      likelihood_score = ${merged.likelihoodScore},
-      priority_score = ${merged.priorityScore},
-      score_reason = ${merged.scoreReason},
-      demo_url = ${merged.demoUrl},
-      demo_built_at = ${merged.demoBuiltAt},
-      demo_expires_at = ${demoExpiresAt},
-      demo_status = ${merged.demoStatus},
-      status = ${merged.status},
-      offer_amount = ${merged.offerAmount},
-      source = ${merged.source},
-      source_ref = ${merged.sourceRef},
-      updated_at = now()
-    WHERE id = ${id}
-    RETURNING *
-  `) as LeadRow[];
-  return rows[0] ? mapLead(rows[0]) : null;
+  if (becomingReady) {
+    add("demo_expires_at", demoExpiresAtFrom());
+  }
+
+  if (sets.length === 0) {
+    return existing;
+  }
+
+  sets.push("updated_at = now()");
+  values.push(id);
+
+  // neon() also supports ordinary function usage: sql(query, params)
+  const query = `UPDATE leads SET ${sets.join(", ")} WHERE id = $${values.length} RETURNING id`;
+  await sql(query, values);
+
+  return getLeadById(sql, id);
 }
 
 export async function deleteLead(sql: Sql, id: number): Promise<boolean> {
