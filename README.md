@@ -57,17 +57,12 @@ Personal single-owner job application tracker **and** parallel Outreach (client 
 
 6. **Production secrets**
    ```bash
-   npm run secrets:db          # DATABASE_URL
-   npm run secrets:key         # API_KEY
-   npm run secrets:resend      # RESEND_API_KEY (event emails + digests + outreach)
-   npm run secrets:digest-to   # DIGEST_TO (your inbox)
-   npm run secrets:digest-from # DIGEST_FROM e.g. Docket <alerts@your-verified-domain>
-   npm run secrets:outreach-from
-   npm run secrets:outreach-reply
-   npm run secrets:outreach-postal
-   npm run secrets:resend-inbound
-   npm run secrets:unsub-key
+   npm run secrets:sync        # generate missing keys → .dev.vars + wrangler secret put
+   npm run secrets:local       # same, but only write .dev.vars (no Cloudflare)
    ```
+   `secrets:sync` auto-generates `RESEND_INBOUND_SECRET` + `UNSUBSCRIBE_SIGNING_KEY`, fills outreach/digest From defaults when missing, then pushes every known secret from `.dev.vars` to Cloudflare. Flags: `--force` (regen crypto keys), `--dry-run`.
+
+   Individual `npm run secrets:*` prompts still work for one-off overrides.
    After Resend is set, use **Settings → Send test email** to verify job digests. Outreach uses `OUTREACH_FROM` (not the digest From).
 
 7. **Build & deploy**
