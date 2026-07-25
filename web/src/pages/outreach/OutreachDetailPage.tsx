@@ -3,11 +3,14 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import type { Lead, LeadStatus } from "@shared/outreach";
 import { api, type LeadMessage, type LeadNote, type LeadReminder } from "../../lib/api";
 import { LeadStatusSelect } from "../../components/LeadStatusSelect";
+import { blockingTooltip, useOutreachPreflight } from "../../lib/useOutreachPreflight";
 
 export function OutreachDetailPage() {
   const { id } = useParams();
   const leadId = Number(id);
   const navigate = useNavigate();
+  const { preflight, ready } = useOutreachPreflight();
+  const sendBlockedTitle = ready ? undefined : blockingTooltip(preflight?.blocking ?? []);
 
   const [lead, setLead] = useState<Lead | null>(null);
   const [notes, setNotes] = useState<LeadNote[]>([]);
@@ -176,7 +179,8 @@ export function OutreachDetailPage() {
           <button
             type="button"
             className="btn"
-            disabled={actionBusy}
+            disabled={actionBusy || !ready}
+            title={sendBlockedTitle}
             onClick={() => void runSend(true)}
           >
             Approve & send
@@ -184,7 +188,8 @@ export function OutreachDetailPage() {
           <button
             type="button"
             className="btn btn-ghost"
-            disabled={actionBusy}
+            disabled={actionBusy || !ready}
+            title={sendBlockedTitle}
             onClick={() => void runSend(false)}
           >
             Send

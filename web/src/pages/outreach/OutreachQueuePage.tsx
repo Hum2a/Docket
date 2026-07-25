@@ -3,12 +3,15 @@ import { Link } from "react-router-dom";
 import type { Lead } from "@shared/outreach";
 import { api } from "../../lib/api";
 import { outreachStatusLabel } from "../../lib/mode";
+import { blockingTooltip, useOutreachPreflight } from "../../lib/useOutreachPreflight";
 
 export function OutreachQueuePage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const { preflight, ready } = useOutreachPreflight();
+  const sendBlockedTitle = ready ? undefined : blockingTooltip(preflight?.blocking ?? []);
 
   const load = useCallback(async () => {
     setError(null);
@@ -121,7 +124,8 @@ export function OutreachQueuePage() {
                     <button
                       type="button"
                       className="btn"
-                      disabled={busyId === l.id}
+                      disabled={busyId === l.id || !ready}
+                      title={sendBlockedTitle}
                       onClick={() => void approve(l.id)}
                     >
                       Approve
@@ -129,7 +133,8 @@ export function OutreachQueuePage() {
                     <button
                       type="button"
                       className="btn btn-ghost"
-                      disabled={busyId === l.id}
+                      disabled={busyId === l.id || !ready}
+                      title={sendBlockedTitle}
                       onClick={() => void send(l.id)}
                     >
                       Send

@@ -38,6 +38,7 @@ import { resolveNotifyRecipients } from "./db";
 import { DEFAULT_FROM, sendResendEmail } from "./email";
 import { bareDomain } from "./outreach/copy";
 import { emailDomain } from "./outreach/canAutoSend";
+import { buildOutreachPreflight } from "./outreach/preflight";
 
 type AppContext = { Bindings: Env };
 
@@ -237,6 +238,12 @@ outreachApp.get("/api/outreach/settings", async (c) => {
   const settings = await getOutreachSettings(sql);
   const sentToday = await countSentToday(sql);
   return c.json({ ...settings, sentToday });
+});
+
+outreachApp.get("/api/outreach/preflight", async (c) => {
+  const sql = getSql(c.env.DATABASE_URL);
+  const settings = await getOutreachSettings(sql);
+  return c.json(buildOutreachPreflight(settings, c.env));
 });
 
 outreachApp.patch("/api/outreach/settings", requireApiKey, async (c) => {

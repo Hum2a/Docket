@@ -1,5 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type OutreachSettingsView } from "../../lib/api";
+import { api, type OutreachSettingsView, type PreflightCheckKey } from "../../lib/api";
+import {
+  PREFLIGHT_HINTS,
+  PREFLIGHT_LABELS,
+  useOutreachPreflight,
+} from "../../lib/useOutreachPreflight";
+
+const CHECK_ORDER: PreflightCheckKey[] = [
+  "sending_domain_set",
+  "from_address_set",
+  "from_domain_not_primary",
+  "postal_address_set",
+  "unsubscribe_key_set",
+  "resend_key_set",
+  "reply_to_set",
+];
 
 export function OutreachSettingsPage() {
   const [settings, setSettings] = useState<OutreachSettingsView | null>(null);
@@ -9,6 +24,7 @@ export function OutreachSettingsPage() {
   const [suppressValue, setSuppressValue] = useState("");
   const [suppressKind, setSuppressKind] = useState<"email" | "domain">("email");
   const [bulkText, setBulkText] = useState("");
+  const { preflight, reload: reloadPreflight } = useOutreachPreflight();
 
   const load = useCallback(async () => {
     setError(null);
@@ -31,6 +47,7 @@ export function OutreachSettingsPage() {
       const next = await api.updateOutreachSettings(patch);
       setSettings(next);
       setMessage("Settings saved.");
+      await reloadPreflight();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -81,6 +98,12 @@ export function OutreachSettingsPage() {
 
   if (!settings && !error) return <p className="muted page-enter">Loading…</p>;
 
+  const ready = preflight?.ready === true;
+  const autoSendBlockedTitle = ready
+    ? undefined
+    : (preflight?.blocking.map((k) => PREFLIGHT_HINTS[k]).join(" ") ??
+      "Outreach is not configured yet.");
+
   return (
     <div className="page-enter">
       <div className="page-head">
@@ -90,6 +113,34 @@ export function OutreachSettingsPage() {
       {error && <div className="error-banner">{error}</div>}
       {message && <div className="success-banner">{message}</div>}
 
+      {preflight && (
+        <section className="panel preflight-panel" style={{ padding: "1.25rem", marginBottom: "1rem" }}>
+          <h2>Send readiness</h2>
+          <p className="muted">
+            {ready
+              ? "All required checks passed."
+              : "Fix the items below before enabling auto-send or approving live sends."}
+          </p>
+          <ul className="preflight-list">
+            {CHECK_ORDER.map((key) => {
+              const ok = preflight.checks[key];
+              const advisory = key === "reply_to_set";
+              return (
+                <li key={key} className={ok ? "ok" : advisory ? "warn" : "fail"}>
+                  <span className="preflight-mark" aria-hidden>
+                    {ok ? "✓" : "✗"}
+                  </span>
+                  <div>
+                    <strong>{PREFLIGHT_LABELS[key]}</strong>
+                    {!ok && <p className="meta">{PREFLIGHT_HINTS[key]}</p>}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
       {settings && (
         <div className="settings-stack">
           <section className="panel" style={{ padding: "1.25rem" }}>
@@ -98,11 +149,14 @@ export function OutreachSettingsPage() {
               Sent today: {settings.sentToday} / {settings.dailySendCap}
             </p>
             <div className="form-grid" style={{ marginTop: "1rem" }}>
-              <label className="checkbox-row">
+              <label
+                className="checkbox-row"
+                title={autoSendBlockedTitle}
+              >
                 <input
                   type="checkbox"
                   checked={settings.autoSendEnabled}
-                  disabled={busy}
+                  disabled={busy || !ready}
                   onChange={(e) => void save({ autoSendEnabled: e.target.checked })}
                 />
                 Auto-send enabled
@@ -115,6 +169,48 @@ export function OutreachSettingsPage() {
                   onChange={(e) => void save({ dryRun: e.target.checked })}
                 />
                 Dry run (queue messages, no Resend)
+              </label>
+              <label>
+                Sending domain
+                <input
+                  defaultValue={settings.sendingDomain ?? ""}
+                  disabled={busy}
+                  placeholder="mail.your-outreach-domain.com"
+                  onBlur={(e) =>
+                    void save({ sendingDomain: e.target.value.trim() || null })
+                  }
+                />
+              </label>
+              <label>
+                From address
+                <input
+                  defaultValue={settings.fromAddress ?? ""}
+                  disabled={busy}
+                  placeholder="Outreach <hello@mail.your-outreach-domain.com>"
+                  onBlur={(e) =>
+                    void save({ fromAddress: e.target.value.trim() || null })
+                  }
+                />
+              </label>
+              <label>
+                Reply-to
+                <input
+                  defaultValue={settings.replyTo ?? ""}
+                  disabled={busy}
+                  placeholder="hello@mail.your-outreach-domain.com"
+                  onBlur={(e) => void save({ replyTo: e.target.value.trim() || null })}
+                />
+              </label>
+              <label>
+                Postal address
+                <input
+                  defaultValue={settings.postalAddress ?? ""}
+                  disabled={busy}
+                  placeholder="Your name, street, city, postcode"
+                  onBlur={(e) =>
+                    void save({ postalAddress: e.target.value.trim() || null })
+                  }
+                />
               </label>
               <label>
                 Auto-send threshold
@@ -155,7 +251,8 @@ export function OutreachSettingsPage() {
                 <button
                   type="button"
                   className="btn btn-ghost"
-                  disabled={busy}
+                  disabled={busy || !ready}
+                  title={autoSendBlockedTitle}
                   onClick={() =>
                     void api.runAutosend().then((r) => setMessage(`Autosend: ${JSON.stringify(r)}`))
                   }
@@ -165,7 +262,8 @@ export function OutreachSettingsPage() {
                 <button
                   type="button"
                   className="btn btn-ghost"
-                  disabled={busy}
+                  disabled={busy || !ready}
+                  title={autoSendBlockedTitle}
                   onClick={() =>
                     void api.runSequence().then((r) => setMessage(`Sequence: ${JSON.stringify(r)}`))
                   }

@@ -771,6 +771,49 @@ table.data .status-select {
   color: var(--muted);
 }
 
+.outreach-chip.tone-config {
+  background: rgba(185, 28, 28, 0.1);
+  color: #b91c1c;
+  border-color: rgba(185, 28, 28, 0.3);
+}
+
+.preflight-list {
+  list-style: none;
+  margin: 0.85rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.preflight-list li {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+}
+
+.preflight-mark {
+  font-weight: 700;
+  width: 1.25rem;
+  flex-shrink: 0;
+}
+
+.preflight-list li.ok .preflight-mark {
+  color: var(--accent);
+}
+
+.preflight-list li.fail .preflight-mark {
+  color: var(--danger);
+}
+
+.preflight-list li.warn .preflight-mark {
+  color: #b45309;
+}
+
+.preflight-list .meta {
+  margin: 0.15rem 0 0;
+}
+
 .board-wide {
   overflow-x: auto;
   padding-bottom: 0.5rem;

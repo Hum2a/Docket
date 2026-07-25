@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Logo } from "./Logo";
 import { api } from "../lib/api";
 import { getStoredMode, setStoredMode, type AppMode } from "../lib/mode";
+import { useOutreachPreflight } from "../lib/useOutreachPreflight";
 
 function ModeSwitch({ mode, onChange }: { mode: AppMode; onChange: (m: AppMode) => void }) {
   return (
@@ -26,10 +27,18 @@ function ModeSwitch({ mode, onChange }: { mode: AppMode; onChange: (m: AppMode) 
 }
 
 function OutreachChip() {
+  const { preflight } = useOutreachPreflight();
   const [label, setLabel] = useState<string>("…");
-  const [tone, setTone] = useState<"live" | "dry" | "paused">("dry");
+  const [tone, setTone] = useState<"live" | "dry" | "paused" | "config">("dry");
 
   useEffect(() => {
+    if (preflight && !preflight.ready) {
+      setLabel("Not configured");
+      setTone("config");
+      return;
+    }
+    if (!preflight) return;
+
     void (async () => {
       try {
         const s = await api.getOutreachSettings();
@@ -50,7 +59,7 @@ function OutreachChip() {
         setTone("paused");
       }
     })();
-  }, []);
+  }, [preflight]);
 
   return <span className={`outreach-chip tone-${tone}`}>{label}</span>;
 }

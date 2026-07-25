@@ -42,6 +42,21 @@ export type LeadStats = {
 };
 export type OutreachSettingsView = OutreachSettings & { sentToday: number };
 
+export type PreflightCheckKey =
+  | "sending_domain_set"
+  | "from_address_set"
+  | "from_domain_not_primary"
+  | "postal_address_set"
+  | "unsubscribe_key_set"
+  | "resend_key_set"
+  | "reply_to_set";
+
+export type OutreachPreflight = {
+  ready: boolean;
+  checks: Record<PreflightCheckKey, boolean>;
+  blocking: PreflightCheckKey[];
+};
+
 const KEY_STORAGE = "docket_api_key";
 
 export function getApiKey(): string | null {
@@ -243,6 +258,7 @@ export const api = {
     ),
 
   getOutreachSettings: () => request<OutreachSettingsView>("/api/outreach/settings"),
+  getOutreachPreflight: () => request<OutreachPreflight>("/api/outreach/preflight"),
   updateOutreachSettings: (body: Record<string, unknown>) =>
     request<OutreachSettingsView>("/api/outreach/settings", {
       method: "PATCH",
