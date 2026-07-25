@@ -10,10 +10,12 @@
     "build": "npm run build:web",
     "build:web": "vite build",
     "deploy": "npm run build:web && wrangler deploy",
-    "typecheck": "tsc --noEmit && tsc -p web/tsconfig.json --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p web/tsconfig.json --noEmit && tsc -p cli/tsconfig.json --noEmit",
     "db:migrate": "node scripts/db.mjs migrate",
     "db:status": "node scripts/db.mjs status",
     "db:ping": "node scripts/db.mjs ping",
+    "lead": "tsx cli/lead.ts",
+    "settings": "tsx cli/settings.ts",
     "r2:create": "wrangler r2 bucket create docket-documents",
     "secrets:sync": "node scripts/secrets.mjs",
     "secrets:local": "node scripts/secrets.mjs --local",
@@ -53,6 +55,8 @@
     "vite": "^8.1.5",
     "vitest": "^4.1.10",
     "wrangler": "^3.99.0",
-    "ws": "^8.21.1"
+    "ws": "^8.21.1",
+    "tsx": "^4.20.3",
+    "@types/node": "^22.16.5"
   }
 }
