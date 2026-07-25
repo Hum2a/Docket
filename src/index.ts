@@ -510,14 +510,16 @@ app.post("/api/email/test", requireApiKey, async (c) => {
   return c.json(result);
 });
 
-// Worker main receives non-asset requests; assets not_found_handling does not run.
-// Serve the SPA shell for client GET routes; keep JSON 404s for unknown /api/* paths.
+// Worker main receives non-asset requests; assets not_found_handling does not run
+// for the original URL. Defer to ASSETS with the incoming request so SPA
+// not_found_handling can return index.html (200). Fetching /index.html directly
+// causes Assets to 307-redirect to /, which breaks deep links like /outreach.
 app.get("*", async (c) => {
   const url = new URL(c.req.url);
   if (url.pathname.startsWith("/api/")) {
     return c.json({ error: "not found" }, 404);
   }
-  return c.env.ASSETS.fetch(new Request(new URL("/index.html", url.origin), c.req.raw));
+  return c.env.ASSETS.fetch(c.req.raw);
 });
 
 export default {
