@@ -103,6 +103,7 @@ export function Layout() {
               </NavLink>
               <NavLink to="/outreach/list">List</NavLink>
               <NavLink to="/outreach/queue">Queue</NavLink>
+              <NavLink to="/outreach/sent">Sent</NavLink>
               <NavLink to="/outreach/stats">Stats</NavLink>
               <NavLink to="/outreach/settings">Settings</NavLink>
             </>

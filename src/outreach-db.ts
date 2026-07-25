@@ -9,6 +9,18 @@ import {
   decodeLeadCursor,
   encodeLeadCursor,
 } from "./outreach/leadCursor";
+import {
+  clampMessageLimit,
+  decodeMessageCursor,
+  encodeMessageCursor,
+  truncateBodyPreview,
+} from "./outreach/messageCursor";
+import {
+  computeOutreachAnalytics,
+  type AnalyticsLead,
+  type AnalyticsMessage,
+  type OutreachAnalytics,
+} from "./outreach/analytics";
 
 type LeadRow = Record<string, unknown>;
 
@@ -660,6 +672,236 @@ export async function listLeadMessages(sql: Sql, leadId: number) {
     error: (r.error as string) ?? null,
     createdAt: String(r.created_at),
   }));
+}
+
+export type OutreachMessageListItem = {
+  id: number;
+  leadId: number;
+  businessName: string;
+  industry: string | null;
+  direction: string;
+  channel: string;
+  subject: string | null;
+  templateId: string | null;
+  variant: string | null;
+  status: string;
+  sentAt: string | null;
+  deliveredAt: string | null;
+  createdAt: string;
+  error: string | null;
+  bodyPreview: string | null;
+};
+
+export type OutreachMessagesPage = {
+  messages: OutreachMessageListItem[];
+  nextCursor: string | null;
+  total: number;
+};
+
+export type OutreachMessageFilters = {
+  direction?: string;
+  status?: string;
+  templateId?: string;
+  variant?: string;
+  industry?: string;
+  leadId?: number;
+  from?: string;
+  to?: string;
+  q?: string;
+  limit?: number;
+  cursor?: string | null;
+};
+
+function mapOutreachMessageRow(r: LeadRow): OutreachMessageListItem {
+  return {
+    id: Number(r.id),
+    leadId: Number(r.lead_id),
+    businessName: String(r.business_name ?? ""),
+    industry: (r.industry as string) ?? null,
+    direction: String(r.direction),
+    channel: String(r.channel),
+    subject: (r.subject as string) ?? null,
+    templateId: (r.template_id as string) ?? null,
+    variant: (r.variant as string) ?? null,
+    status: String(r.status),
+    sentAt: r.sent_at ? String(r.sent_at) : null,
+    deliveredAt: r.delivered_at ? String(r.delivered_at) : null,
+    createdAt: String(r.created_at),
+    error: (r.error as string) ?? null,
+    bodyPreview: truncateBodyPreview((r.body_preview as string) ?? (r.body as string) ?? null),
+  };
+}
+
+export async function listOutreachMessagesPage(
+  sql: Sql,
+  opts: OutreachMessageFilters = {}
+): Promise<OutreachMessagesPage> {
+  const limit = clampMessageLimit(opts.limit);
+  const cursor = decodeMessageCursor(opts.cursor ?? null);
+  const direction = opts.direction?.trim() || null;
+  const status = opts.status?.trim() || null;
+  const templateId = opts.templateId?.trim() || null;
+  const variant = opts.variant?.trim() || null;
+  const industry = opts.industry?.trim() || null;
+  const leadId = opts.leadId != null && Number.isInteger(opts.leadId) ? opts.leadId : null;
+  const from = opts.from?.trim() || null;
+  const to = opts.to?.trim() || null;
+  const q = opts.q?.trim() ? `%${opts.q.trim().toLowerCase()}%` : null;
+
+  const countRows = (await sql`
+    SELECT COUNT(*)::int AS n
+    FROM lead_messages m
+    JOIN leads l ON l.id = m.lead_id
+    WHERE (${direction}::text IS NULL OR m.direction = ${direction})
+      AND (${status}::text IS NULL OR m.status = ${status})
+      AND (${templateId}::text IS NULL OR m.template_id = ${templateId})
+      AND (${variant}::text IS NULL OR m.variant = ${variant})
+      AND (${industry}::text IS NULL OR l.industry = ${industry})
+      AND (${leadId}::int IS NULL OR m.lead_id = ${leadId})
+      AND (${from}::timestamptz IS NULL OR m.created_at >= ${from}::timestamptz)
+      AND (${to}::timestamptz IS NULL OR m.created_at <= ${to}::timestamptz)
+      AND (
+        ${q}::text IS NULL
+        OR lower(l.business_name) LIKE ${q}
+        OR lower(coalesce(m.subject, '')) LIKE ${q}
+      )
+  `) as { n: number }[];
+  const total = Number(countRows[0]?.n ?? 0);
+
+  let rows: LeadRow[];
+  if (!cursor) {
+    rows = (await sql`
+      SELECT
+        m.id, m.lead_id, l.business_name, l.industry, m.direction, m.channel,
+        m.subject, m.template_id, m.variant, m.status, m.sent_at, m.delivered_at,
+        m.created_at, m.error, left(coalesce(m.body, ''), 140) AS body_preview
+      FROM lead_messages m
+      JOIN leads l ON l.id = m.lead_id
+      WHERE (${direction}::text IS NULL OR m.direction = ${direction})
+        AND (${status}::text IS NULL OR m.status = ${status})
+        AND (${templateId}::text IS NULL OR m.template_id = ${templateId})
+        AND (${variant}::text IS NULL OR m.variant = ${variant})
+        AND (${industry}::text IS NULL OR l.industry = ${industry})
+        AND (${leadId}::int IS NULL OR m.lead_id = ${leadId})
+        AND (${from}::timestamptz IS NULL OR m.created_at >= ${from}::timestamptz)
+        AND (${to}::timestamptz IS NULL OR m.created_at <= ${to}::timestamptz)
+        AND (
+          ${q}::text IS NULL
+          OR lower(l.business_name) LIKE ${q}
+          OR lower(coalesce(m.subject, '')) LIKE ${q}
+        )
+      ORDER BY m.created_at DESC, m.id DESC
+      LIMIT ${limit}
+    `) as LeadRow[];
+  } else {
+    const ts = cursor.t;
+    const id = cursor.i;
+    rows = (await sql`
+      SELECT
+        m.id, m.lead_id, l.business_name, l.industry, m.direction, m.channel,
+        m.subject, m.template_id, m.variant, m.status, m.sent_at, m.delivered_at,
+        m.created_at, m.error, left(coalesce(m.body, ''), 140) AS body_preview
+      FROM lead_messages m
+      JOIN leads l ON l.id = m.lead_id
+      WHERE (${direction}::text IS NULL OR m.direction = ${direction})
+        AND (${status}::text IS NULL OR m.status = ${status})
+        AND (${templateId}::text IS NULL OR m.template_id = ${templateId})
+        AND (${variant}::text IS NULL OR m.variant = ${variant})
+        AND (${industry}::text IS NULL OR l.industry = ${industry})
+        AND (${leadId}::int IS NULL OR m.lead_id = ${leadId})
+        AND (${from}::timestamptz IS NULL OR m.created_at >= ${from}::timestamptz)
+        AND (${to}::timestamptz IS NULL OR m.created_at <= ${to}::timestamptz)
+        AND (
+          ${q}::text IS NULL
+          OR lower(l.business_name) LIKE ${q}
+          OR lower(coalesce(m.subject, '')) LIKE ${q}
+        )
+        AND (
+          m.created_at < ${ts}::timestamptz
+          OR (m.created_at = ${ts}::timestamptz AND m.id < ${id})
+        )
+      ORDER BY m.created_at DESC, m.id DESC
+      LIMIT ${limit}
+    `) as LeadRow[];
+  }
+
+  const messages = rows.map(mapOutreachMessageRow);
+  const nextCursor =
+    messages.length === limit
+      ? encodeMessageCursor({
+          t: messages[messages.length - 1]!.createdAt,
+          i: messages[messages.length - 1]!.id,
+        })
+      : null;
+
+  return { messages, nextCursor, total };
+}
+
+export async function getOutreachMessageById(sql: Sql, id: number) {
+  const rows = (await sql`
+    SELECT
+      m.*, l.business_name, l.industry
+    FROM lead_messages m
+    JOIN leads l ON l.id = m.lead_id
+    WHERE m.id = ${id}
+    LIMIT 1
+  `) as LeadRow[];
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    id: Number(r.id),
+    leadId: Number(r.lead_id),
+    businessName: String(r.business_name ?? ""),
+    industry: (r.industry as string) ?? null,
+    direction: String(r.direction),
+    channel: String(r.channel),
+    subject: (r.subject as string) ?? null,
+    body: (r.body as string) ?? null,
+    templateId: (r.template_id as string) ?? null,
+    variant: (r.variant as string) ?? null,
+    status: String(r.status),
+    sentAt: r.sent_at ? String(r.sent_at) : null,
+    deliveredAt: r.delivered_at ? String(r.delivered_at) : null,
+    error: (r.error as string) ?? null,
+    createdAt: String(r.created_at),
+  };
+}
+
+export async function getOutreachAnalytics(sql: Sql): Promise<OutreachAnalytics> {
+  const msgRows = (await sql`
+    SELECT id, lead_id, direction, status, template_id, variant, sent_at, created_at
+    FROM lead_messages
+    ORDER BY id ASC
+  `) as LeadRow[];
+  const messages: AnalyticsMessage[] = msgRows.map((r) => ({
+    id: Number(r.id),
+    leadId: Number(r.lead_id),
+    direction: String(r.direction),
+    status: String(r.status),
+    templateId: (r.template_id as string) ?? null,
+    variant: (r.variant as string) ?? null,
+    sentAt: r.sent_at ? String(r.sent_at) : null,
+    createdAt: String(r.created_at),
+  }));
+
+  const leadRows = (await sql`
+    SELECT id, industry, replied_at, reply_sentiment, status, offer_amount, audit
+    FROM leads
+  `) as LeadRow[];
+  const leads: AnalyticsLead[] = leadRows.map((r) => {
+    const audit = r.audit;
+    return {
+      id: Number(r.id),
+      industry: (r.industry as string) ?? null,
+      repliedAt: r.replied_at ? String(r.replied_at) : null,
+      replySentiment: (r.reply_sentiment as string) ?? null,
+      status: String(r.status),
+      offerAmount: Number(r.offer_amount ?? 0),
+      audit: (typeof audit === "object" && audit ? audit : {}) as Record<string, unknown>,
+    };
+  });
+
+  return computeOutreachAnalytics(messages, leads);
 }
 
 /** Provider id from the first successful initial outbound, for threading headers. */

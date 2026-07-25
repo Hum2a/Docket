@@ -30,6 +30,9 @@ import {
   listLeadReminders,
   listLeads,
   listLeadsPage,
+  listOutreachMessagesPage,
+  getOutreachAnalytics,
+  getOutreachMessageById,
   setLeadReminderCompleted,
   updateLead,
   updateOutreachSettings,
@@ -325,6 +328,110 @@ outreachApp.get("/api/outreach/preflight", async (c) => {
   const sql = getSql(c.env.DATABASE_URL);
   const settings = await getOutreachSettings(sql);
   return c.json(buildOutreachPreflight(settings, c.env));
+});
+
+outreachApp.get("/api/outreach/messages", async (c) => {
+  const sql = getSql(c.env.DATABASE_URL);
+  const leadIdRaw = c.req.query("leadId") || c.req.query("lead_id");
+  const page = await listOutreachMessagesPage(sql, {
+    direction: c.req.query("direction") || undefined,
+    status: c.req.query("status") || undefined,
+    templateId: c.req.query("templateId") || c.req.query("template_id") || undefined,
+    variant: c.req.query("variant") || undefined,
+    industry: c.req.query("industry") || undefined,
+    leadId: leadIdRaw ? Number(leadIdRaw) : undefined,
+    from: c.req.query("from") || undefined,
+    to: c.req.query("to") || undefined,
+    q: c.req.query("q") || undefined,
+    limit: c.req.query("limit") ? Number(c.req.query("limit")) : undefined,
+    cursor: c.req.query("cursor") || undefined,
+  });
+  return c.json(page);
+});
+
+outreachApp.get("/api/outreach/messages.csv", async (c) => {
+  const sql = getSql(c.env.DATABASE_URL);
+  const leadIdRaw = c.req.query("leadId") || c.req.query("lead_id");
+  const filters = {
+    direction: c.req.query("direction") || undefined,
+    status: c.req.query("status") || undefined,
+    templateId: c.req.query("templateId") || c.req.query("template_id") || undefined,
+    variant: c.req.query("variant") || undefined,
+    industry: c.req.query("industry") || undefined,
+    leadId: leadIdRaw ? Number(leadIdRaw) : undefined,
+    from: c.req.query("from") || undefined,
+    to: c.req.query("to") || undefined,
+    q: c.req.query("q") || undefined,
+  };
+  const page = await listOutreachMessagesPage(sql, { ...filters, limit: 200 });
+  const all = [...page.messages];
+  let cursor = page.nextCursor;
+  while (cursor && all.length < 5000) {
+    const next = await listOutreachMessagesPage(sql, {
+      ...filters,
+      limit: 200,
+      cursor,
+    });
+    all.push(...next.messages);
+    cursor = next.nextCursor;
+  }
+  const esc = (v: unknown) => {
+    const s = v == null ? "" : String(v);
+    return `"${s.replace(/"/g, '""')}"`;
+  };
+  const header = [
+    "id",
+    "createdAt",
+    "leadId",
+    "businessName",
+    "industry",
+    "direction",
+    "subject",
+    "templateId",
+    "variant",
+    "status",
+    "error",
+  ];
+  const lines = [
+    header.join(","),
+    ...all.map((m) =>
+      [
+        m.id,
+        m.createdAt,
+        m.leadId,
+        m.businessName,
+        m.industry,
+        m.direction,
+        m.subject,
+        m.templateId,
+        m.variant,
+        m.status,
+        m.error,
+      ]
+        .map(esc)
+        .join(",")
+    ),
+  ];
+  return new Response(lines.join("\n"), {
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": 'attachment; filename="outreach-messages.csv"',
+    },
+  });
+});
+
+outreachApp.get("/api/outreach/messages/:id", async (c) => {
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id)) return c.json({ error: "id must be an integer" }, 400);
+  const sql = getSql(c.env.DATABASE_URL);
+  const msg = await getOutreachMessageById(sql, id);
+  if (!msg) return c.json({ error: "not found" }, 404);
+  return c.json(msg);
+});
+
+outreachApp.get("/api/outreach/analytics", async (c) => {
+  const sql = getSql(c.env.DATABASE_URL);
+  return c.json(await getOutreachAnalytics(sql));
 });
 
 outreachApp.patch("/api/outreach/settings", requireApiKey, async (c) => {

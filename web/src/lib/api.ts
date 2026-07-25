@@ -42,6 +42,50 @@ export type LeadStats = {
 };
 export type OutreachSettingsView = OutreachSettings & { sentToday: number };
 
+export type OutreachMessageListItem = {
+  id: number;
+  leadId: number;
+  businessName: string;
+  industry: string | null;
+  direction: string;
+  channel: string;
+  subject: string | null;
+  templateId: string | null;
+  variant: string | null;
+  status: string;
+  sentAt: string | null;
+  deliveredAt: string | null;
+  createdAt: string;
+  error: string | null;
+  bodyPreview: string | null;
+};
+
+export type OutreachAnalytics = {
+  totals: {
+    sent: number;
+    delivered: number;
+    bounced: number;
+    complained: number;
+    failed: number;
+    replied: number;
+    positive: number;
+    unsubscribed: number;
+    won: number;
+    revenue: number;
+  };
+  rates: {
+    delivery: { num: number; den: number };
+    reply: { num: number; den: number };
+    positive: { num: number; den: number };
+  };
+  bySubjectVariant: Array<{ variant: string; sent: number; replied: number }>;
+  bySignal: Array<{ signal: string; sent: number; replied: number }>;
+  byIndustry: Array<{ industry: string; sent: number; replied: number }>;
+  byTemplate: Array<{ templateId: string; sent: number; replied: number }>;
+  timeToReplyHours: { median: number | null; n: number };
+  sentPerDay: Array<{ date: string; sent: number }>;
+};
+
 export type PreflightCheckKey =
   | "sending_domain_set"
   | "from_address_set"
@@ -269,6 +313,21 @@ export const api = {
 
   getOutreachSettings: () => request<OutreachSettingsView>("/api/outreach/settings"),
   getOutreachPreflight: () => request<OutreachPreflight>("/api/outreach/preflight"),
+  listOutreachMessages: (params?: Record<string, string>) => {
+    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+    return request<{
+      messages: OutreachMessageListItem[];
+      nextCursor: string | null;
+      total: number;
+    }>(`/api/outreach/messages${qs}`);
+  },
+  getOutreachMessage: (id: number) =>
+    request<OutreachMessageListItem & { body: string | null }>(`/api/outreach/messages/${id}`),
+  getOutreachAnalytics: () => request<OutreachAnalytics>("/api/outreach/analytics"),
+  exportOutreachMessagesCsvUrl: (params?: Record<string, string>) => {
+    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+    return `/api/outreach/messages.csv${qs}`;
+  },
   updateOutreachSettings: (body: Record<string, unknown>) =>
     request<OutreachSettingsView>("/api/outreach/settings", {
       method: "PATCH",

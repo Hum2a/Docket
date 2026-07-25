@@ -11,6 +11,7 @@ import { OutreachQueuePage } from "./pages/outreach/OutreachQueuePage";
 import { OutreachDetailPage } from "./pages/outreach/OutreachDetailPage";
 import { OutreachStatsPage } from "./pages/outreach/OutreachStatsPage";
 import { OutreachSettingsPage } from "./pages/outreach/OutreachSettingsPage";
+import { OutreachSentPage } from "./pages/outreach/OutreachSentPage";
 import { getStoredMode } from "./lib/mode";
 
 function ModeRedirect() {
@@ -30,6 +31,7 @@ export default function App() {
         <Route path="outreach" element={<OutreachBoardPage />} />
         <Route path="outreach/list" element={<OutreachListPage />} />
         <Route path="outreach/queue" element={<OutreachQueuePage />} />
+        <Route path="outreach/sent" element={<OutreachSentPage />} />
         <Route path="outreach/leads/:id" element={<OutreachDetailPage />} />
         <Route path="outreach/stats" element={<OutreachStatsPage />} />
         <Route path="outreach/settings" element={<OutreachSettingsPage />} />

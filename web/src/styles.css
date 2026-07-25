@@ -902,3 +902,49 @@ table.data .status-select {
   max-width: 100%;
   font-size: 0.8rem;
 }
+
+.msg-status-chip {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: lowercase;
+}
+.msg-status-chip.status-sent,
+.msg-status-chip.status-delivered {
+  background: #d8f3dc;
+  color: #0f6e56;
+}
+.msg-status-chip.status-queued {
+  background: #e8eef5;
+  color: #3d4f66;
+}
+.msg-status-chip.status-failed {
+  background: #fde2e1;
+  color: #a32d2d;
+}
+.msg-status-chip.status-bounced,
+.msg-status-chip.status-complained {
+  background: #fde8c8;
+  color: #8a4b08;
+}
+
+.msg-row-inbound td {
+  background: #f4f7fb;
+}
+.msg-row-inbound td:first-child {
+  box-shadow: inset 3px 0 0 #5b7c99;
+}
+
+.rate-small-sample,
+.rate-small-sample-row {
+  color: #6b7c90;
+}
+.rate-small-sample-row td {
+  color: #6b7c90;
+}
+
+.deliverability-banner {
+  margin-bottom: 1rem;
+}
