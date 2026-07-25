@@ -12,7 +12,7 @@ import {
   settingsGateInput,
   updateLead,
 } from "./outreach-db";
-import { canAutoSend } from "./outreach/canAutoSend";
+import { canAutoSend, emailDomain } from "./outreach/canAutoSend";
 import {
   absoluteFollowupAt,
   renderOutreachCopy,
@@ -21,6 +21,8 @@ import {
   type CopyLeadInput,
 } from "./outreach/copy";
 import { sendResendEmail } from "./email";
+
+const PRIMARY_SENDING_ROOT = "humza-butt.space";
 
 async function sha256Hex(input: string): Promise<string> {
   const data = new TextEncoder().encode(input);
@@ -37,6 +39,30 @@ export async function makeIdempotencyKey(
 }
 
 export { resolvePostalAddress };
+
+/** Strip `Name <addr@domain>` to bare address, then parse with emailDomain. */
+export function extractFromAddress(from: string): string {
+  const trimmed = from.trim();
+  const angle = trimmed.match(/<([^>]+)>/);
+  return (angle ? angle[1] : trimmed).trim();
+}
+
+/** True if from-address domain is humza-butt.space or any subdomain. */
+export function isPrimarySendingDomain(from: string): boolean {
+  const domain = emailDomain(extractFromAddress(from));
+  if (!domain) return false;
+  return domain === PRIMARY_SENDING_ROOT || domain.endsWith(`.${PRIMARY_SENDING_ROOT}`);
+}
+
+/** Constant-time hex compare: length check, then XOR-accumulate. */
+export function constantTimeEqualHex(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let acc = 0;
+  for (let i = 0; i < a.length; i++) {
+    acc |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return acc === 0;
+}
 
 function toCopyLead(lead: Lead): CopyLeadInput {
   return {
@@ -76,13 +102,25 @@ export async function verifyUnsubscribeToken(
   secret: string,
   token: string
 ): Promise<{ leadId: number; email: string } | null> {
-  const parts = token.split(".");
-  if (parts.length !== 4) return null;
-  const [idStr, email, expStr, sig] = parts;
+  // Format: {leadId}.{email}.{exp}.{sig} — email may contain dots, so do not split on every ".".
+  const lastDot = token.lastIndexOf(".");
+  if (lastDot <= 0) return null;
+  const sig = token.slice(lastDot + 1);
+  const withoutSig = token.slice(0, lastDot);
+  const expDot = withoutSig.lastIndexOf(".");
+  if (expDot <= 0) return null;
+  const expStr = withoutSig.slice(expDot + 1);
+  const withoutExp = withoutSig.slice(0, expDot);
+  const firstDot = withoutExp.indexOf(".");
+  if (firstDot <= 0) return null;
+  const idStr = withoutExp.slice(0, firstDot);
+  const email = withoutExp.slice(firstDot + 1);
+
   const leadId = Number(idStr);
   const exp = Number(expStr);
   if (!Number.isInteger(leadId) || !email || !Number.isFinite(exp)) return null;
   if (Math.floor(Date.now() / 1000) > exp) return null;
+  // signUnsubscribeToken embeds a fresh exp each call — rebuild payload from this token's exp.
   const payload = `${leadId}.${email.toLowerCase()}.${exp}`;
   const key = await crypto.subtle.importKey(
     "raw",
@@ -93,7 +131,7 @@ export async function verifyUnsubscribeToken(
   );
   const raw = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
   const hex = [...new Uint8Array(raw)].map((b) => b.toString(16).padStart(2, "0")).join("");
-  if (hex !== sig) return null;
+  if (!constantTimeEqualHex(hex, sig)) return null;
   return { leadId, email: email.toLowerCase() };
 }
 
@@ -111,18 +149,22 @@ export async function sendLeadOutreach(opts: {
   lead: Lead;
   settings: OutreachSettings;
   origin: string;
+  /** Skip auto_send_disabled / paused / daily_cap. Does not affect dry_run. */
   force?: boolean;
+  /** Only flag that allows a live Resend send while settings.dryRun is true. */
+  overrideDryRun?: boolean;
   templateId?: string;
 }): Promise<SendLeadResult> {
-  const { sql, env, lead, settings, origin, force } = opts;
+  const { sql, env, lead, settings, origin, force, overrideDryRun } = opts;
   const templateId = resolveTemplateId(lead.followupStep, opts.templateId);
   const todayCount = await countSentToday(sql);
+  const dryRunFlag = Boolean(settings.dryRun) && !overrideDryRun;
 
   const postal = resolvePostalAddress(settings, env);
   if (!postal) {
-    const reasons = ["missing_postal_address"];
+    const reasons = ["postal_address_not_configured"];
     await setLeadReviewReasons(sql, lead.id, reasons);
-    return { sent: false, dryRun: settings.dryRun, deferred: false, reasons };
+    return { sent: false, dryRun: dryRunFlag, deferred: false, reasons };
   }
 
   let suppressedExtra = false;
@@ -144,11 +186,16 @@ export async function sendLeadOutreach(opts: {
 
   if (!force && reviewBlockers.length > 0) {
     await setLeadReviewReasons(sql, lead.id, reviewBlockers);
-    return { sent: false, dryRun: settings.dryRun, deferred: gate.deferred, reasons: gate.reasons };
+    return { sent: false, dryRun: dryRunFlag, deferred: gate.deferred, reasons: gate.reasons };
   }
 
-  if (!force && (gate.reasons.includes("daily_cap_reached") || gate.reasons.includes("sending_paused"))) {
-    return { sent: false, dryRun: settings.dryRun, deferred: true, reasons: gate.reasons };
+  if (
+    !force &&
+    (gate.reasons.includes("daily_cap_reached") ||
+      gate.reasons.includes("sending_paused") ||
+      gate.reasons.includes("auto_send_disabled"))
+  ) {
+    return { sent: false, dryRun: dryRunFlag, deferred: true, reasons: gate.reasons };
   }
 
   if (force) {
@@ -160,12 +207,31 @@ export async function sendLeadOutreach(opts: {
     const hardReview = hard.reasons.filter((r) => r !== "daily_cap_reached");
     if (hardReview.length > 0) {
       await setLeadReviewReasons(sql, lead.id, hardReview);
-      return { sent: false, dryRun: settings.dryRun, deferred: false, reasons: hardReview };
+      return { sent: false, dryRun: dryRunFlag, deferred: false, reasons: hardReview };
     }
   }
 
   if (!lead.contactEmail) {
-    return { sent: false, dryRun: settings.dryRun, deferred: false, reasons: ["missing_contact_email"] };
+    return { sent: false, dryRun: dryRunFlag, deferred: false, reasons: ["missing_contact_email"] };
+  }
+
+  const from = (settings.fromAddress || env.OUTREACH_FROM || "").trim();
+  if (!from) {
+    const reasons = ["sending_identity_not_configured"];
+    await setLeadReviewReasons(sql, lead.id, reasons);
+    return { sent: false, dryRun: dryRunFlag, deferred: false, reasons };
+  }
+  if (isPrimarySendingDomain(from)) {
+    const reasons = ["sending_domain_is_primary"];
+    await setLeadReviewReasons(sql, lead.id, reasons);
+    return { sent: false, dryRun: dryRunFlag, deferred: false, reasons };
+  }
+
+  const secret = env.UNSUBSCRIBE_SIGNING_KEY?.trim();
+  if (!secret) {
+    const reasons = ["unsubscribe_key_not_configured"];
+    await setLeadReviewReasons(sql, lead.id, reasons);
+    return { sent: false, dryRun: dryRunFlag, deferred: false, reasons };
   }
 
   const step = lead.followupStep;
@@ -174,14 +240,13 @@ export async function sendLeadOutreach(opts: {
   if (existing) {
     return {
       sent: existing.status === "sent" || existing.status === "delivered",
-      dryRun: settings.dryRun,
+      dryRun: dryRunFlag,
       deferred: false,
       reasons: ["idempotent_replay"],
       messageId: Number(existing.id),
     };
   }
 
-  const secret = env.UNSUBSCRIBE_SIGNING_KEY || env.API_KEY;
   const token = await signUnsubscribeToken(secret, lead.id, lead.contactEmail);
   const unsubUrl = `${origin}/api/unsubscribe?token=${encodeURIComponent(token)}`;
 
@@ -192,14 +257,7 @@ export async function sendLeadOutreach(opts: {
     templateId,
   });
   const text = rendered.text;
-
-  const from =
-    settings.fromAddress ||
-    env.OUTREACH_FROM ||
-    "Outreach <outreach@mail.humza-butt.space>";
   const replyTo = settings.replyTo || env.OUTREACH_REPLY_TO || undefined;
-
-  const dryRun = force ? false : settings.dryRun;
 
   async function persistAuditOnInitial() {
     if (templateId !== "initial" || !rendered.variant) return;
@@ -214,7 +272,7 @@ export async function sendLeadOutreach(opts: {
     await updateLead(sql, lead.id, { audit });
   }
 
-  if (dryRun) {
+  if (dryRunFlag) {
     await persistAuditOnInitial();
     const row = await insertLeadMessage(sql, {
       leadId: lead.id,
@@ -309,7 +367,7 @@ export async function sendLeadOutreach(opts: {
       status = ${status},
       sent_at = COALESCE(sent_at, now()),
       last_touch_at = now(),
-      followup_step = ${isFinal ? nextStep : nextStep},
+      followup_step = ${nextStep},
       next_followup_at = ${nextFollowup},
       review_reasons = '{}',
       updated_at = now()
