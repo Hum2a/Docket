@@ -230,9 +230,20 @@ export async function sendLeadOutreach(opts: {
     return { sent: false, dryRun: dryRunFlag, deferred: false, reasons };
   }
   if (isPrimarySendingDomain(from)) {
-    const reasons = ["sending_domain_is_primary"];
-    await setLeadReviewReasons(sql, lead.id, reasons);
-    return { sent: false, dryRun: dryRunFlag, deferred: false, reasons };
+    if (!settings.allowPrimarySendingDomain) {
+      const reasons = ["sending_domain_is_primary"];
+      await setLeadReviewReasons(sql, lead.id, reasons);
+      return { sent: false, dryRun: dryRunFlag, deferred: false, reasons };
+    }
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        msg: "primary_sending_domain_allowed",
+        leadId: lead.id,
+        fromDomain: emailDomain(extractFromAddress(from)),
+        hint: "allow_primary_sending_domain is enabled — cold outreach from portfolio domain",
+      })
+    );
   }
 
   const secret = env.UNSUBSCRIBE_SIGNING_KEY?.trim();

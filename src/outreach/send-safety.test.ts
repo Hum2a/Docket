@@ -113,6 +113,7 @@ function baseSettings(over: Partial<OutreachSettings> = {}): OutreachSettings {
     followupOffsetsDays: [3, 7],
     dryRun: true,
     pausedUntil: null,
+    allowPrimarySendingDomain: false,
     updatedAt: new Date().toISOString(),
     ...over,
   };
@@ -246,13 +247,77 @@ describe("sendLeadOutreach fail-closed", () => {
         sql,
         env: baseEnv(),
         lead: baseLead(),
-        settings: baseSettings({ fromAddress }),
+        settings: baseSettings({ fromAddress, allowPrimarySendingDomain: false }),
         origin: "https://example.com",
         force: true,
       });
       expect(result.reasons).toEqual(["sending_domain_is_primary"]);
       expect(insertLeadMessage).not.toHaveBeenCalled();
     }
+  });
+
+  it("allowPrimarySendingDomain:true permits primary from-address and logs a warning", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const fromAddress = "Outreach <outreach@mail.humza-butt.space>";
+    const result = await sendLeadOutreach({
+      sql,
+      env: baseEnv(),
+      lead: baseLead(),
+      settings: baseSettings({ fromAddress, allowPrimarySendingDomain: true }),
+      origin: "https://example.com",
+      force: true,
+    });
+    expect(result.reasons).not.toContain("sending_domain_is_primary");
+    expect(result.dryRun).toBe(true);
+    expect(insertLeadMessage).toHaveBeenCalled();
+    expect(warn).toHaveBeenCalled();
+    const logged = String(warn.mock.calls[0]?.[0] ?? "");
+    expect(logged).toContain("primary_sending_domain_allowed");
+    expect(logged).toContain("mail.humza-butt.space");
+    warn.mockRestore();
+  });
+
+  it("allowPrimarySendingDomain does not weaken PECR, freemail, or suppression", async () => {
+    const primaryFrom = "Outreach <outreach@mail.humza-butt.space>";
+    const settings = baseSettings({
+      fromAddress: primaryFrom,
+      allowPrimarySendingDomain: true,
+    });
+
+    const soleTrader = await sendLeadOutreach({
+      sql,
+      env: baseEnv(),
+      lead: baseLead({ corporateSubscriber: false }),
+      settings,
+      origin: "https://example.com",
+      force: true,
+    });
+    expect(soleTrader.reasons).toContain("not_corporate_subscriber");
+    expect(insertLeadMessage).not.toHaveBeenCalled();
+
+    insertLeadMessage.mockClear();
+    const freemail = await sendLeadOutreach({
+      sql,
+      env: baseEnv(),
+      lead: baseLead({ contactEmail: "jane@gmail.com" }),
+      settings,
+      origin: "https://example.com",
+      force: true,
+    });
+    expect(freemail.reasons).toContain("freemail_address");
+    expect(insertLeadMessage).not.toHaveBeenCalled();
+
+    insertLeadMessage.mockClear();
+    const suppressed = await sendLeadOutreach({
+      sql,
+      env: baseEnv(),
+      lead: baseLead({ suppressed: true }),
+      settings,
+      origin: "https://example.com",
+      force: true,
+    });
+    expect(suppressed.reasons).toContain("lead_suppressed");
+    expect(insertLeadMessage).not.toHaveBeenCalled();
   });
 
   it("unset postal → postal_address_not_configured", async () => {

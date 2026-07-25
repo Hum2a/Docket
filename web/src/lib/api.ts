@@ -55,6 +55,7 @@ export type OutreachPreflight = {
   ready: boolean;
   checks: Record<PreflightCheckKey, boolean>;
   blocking: PreflightCheckKey[];
+  warnings: PreflightCheckKey[];
 };
 
 const KEY_STORAGE = "docket_api_key";

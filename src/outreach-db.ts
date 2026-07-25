@@ -82,6 +82,7 @@ function mapSettings(row: LeadRow): OutreachSettings {
     followupOffsetsDays: Array.isArray(offsets) ? offsets.map(Number) : [3, 7],
     dryRun: Boolean(row.dry_run),
     pausedUntil: row.paused_until ? String(row.paused_until) : null,
+    allowPrimarySendingDomain: Boolean(row.allow_primary_sending_domain),
     updatedAt: String(row.updated_at),
   };
 }
@@ -105,6 +106,7 @@ export async function updateOutreachSettings(
     followupOffsetsDays: number[];
     dryRun: boolean;
     pausedUntil: string | null;
+    allowPrimarySendingDomain: boolean;
   }>
 ): Promise<OutreachSettings> {
   const cur = await getOutreachSettings(sql);
@@ -119,6 +121,8 @@ export async function updateOutreachSettings(
     followupOffsetsDays: patch.followupOffsetsDays ?? cur.followupOffsetsDays,
     dryRun: patch.dryRun ?? cur.dryRun,
     pausedUntil: patch.pausedUntil !== undefined ? patch.pausedUntil : cur.pausedUntil,
+    allowPrimarySendingDomain:
+      patch.allowPrimarySendingDomain ?? cur.allowPrimarySendingDomain,
   };
   const rows = (await sql`
     UPDATE outreach_settings SET
@@ -132,6 +136,7 @@ export async function updateOutreachSettings(
       followup_offsets_days = ${next.followupOffsetsDays},
       dry_run = ${next.dryRun},
       paused_until = ${next.pausedUntil},
+      allow_primary_sending_domain = ${next.allowPrimarySendingDomain},
       updated_at = now()
     WHERE id = 1
     RETURNING *

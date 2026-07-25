@@ -264,6 +264,9 @@ outreachApp.patch("/api/outreach/settings", requireApiKey, async (c) => {
   const patch: Parameters<typeof updateOutreachSettings>[1] = {};
   if (typeof body.autoSendEnabled === "boolean") patch.autoSendEnabled = body.autoSendEnabled;
   if (typeof body.dryRun === "boolean") patch.dryRun = body.dryRun;
+  if (typeof body.allowPrimarySendingDomain === "boolean") {
+    patch.allowPrimarySendingDomain = body.allowPrimarySendingDomain;
+  }
   if (typeof body.autoSendThreshold === "number") patch.autoSendThreshold = body.autoSendThreshold;
   if (typeof body.dailySendCap === "number") patch.dailySendCap = body.dailySendCap;
   if ("sendingDomain" in body) patch.sendingDomain = (body.sendingDomain as string) || null;

@@ -118,17 +118,20 @@ export function OutreachSettingsPage() {
           <h2>Send readiness</h2>
           <p className="muted">
             {ready
-              ? "All required checks passed."
+              ? preflight.warnings.length > 0
+                ? "Ready to send, with warnings."
+                : "All required checks passed."
               : "Fix the items below before enabling auto-send or approving live sends."}
           </p>
           <ul className="preflight-list">
             {CHECK_ORDER.map((key) => {
               const ok = preflight.checks[key];
-              const advisory = key === "reply_to_set";
+              const warning = preflight.warnings.includes(key);
+              const advisory = key === "reply_to_set" || warning;
               return (
                 <li key={key} className={ok ? "ok" : advisory ? "warn" : "fail"}>
                   <span className="preflight-mark" aria-hidden>
-                    {ok ? "✓" : "✗"}
+                    {ok ? "✓" : warning ? "!" : "✗"}
                   </span>
                   <div>
                     <strong>{PREFLIGHT_LABELS[key]}</strong>
@@ -170,6 +173,21 @@ export function OutreachSettingsPage() {
                 />
                 Dry run (queue messages, no Resend)
               </label>
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={settings.allowPrimarySendingDomain}
+                  disabled={busy}
+                  onChange={(e) =>
+                    void save({ allowPrimarySendingDomain: e.target.checked })
+                  }
+                />
+                Allow sending from humza-butt.space
+              </label>
+              <p className="meta" style={{ marginTop: "-0.5rem", marginBottom: "0.5rem" }}>
+                Cold outreach from this domain can affect delivery of everything else sent from it,
+                including Docket&apos;s own job digests.
+              </p>
               <label>
                 Sending domain
                 <input

@@ -4,12 +4,22 @@ import type { OutreachSettings } from "../../shared/outreach";
 
 const emptySettings: Pick<
   OutreachSettings,
-  "sendingDomain" | "fromAddress" | "replyTo" | "postalAddress"
+  | "sendingDomain"
+  | "fromAddress"
+  | "replyTo"
+  | "postalAddress"
+  | "allowPrimarySendingDomain"
 > = {
   sendingDomain: null,
   fromAddress: null,
   replyTo: null,
   postalAddress: null,
+  allowPrimarySendingDomain: false,
+};
+
+const readyEnv = {
+  UNSUBSCRIBE_SIGNING_KEY: "unsub-secret",
+  RESEND_API_KEY: "re_test_key",
 };
 
 describe("buildOutreachPreflight", () => {
@@ -28,6 +38,7 @@ describe("buildOutreachPreflight", () => {
     expect(result.blocking).not.toContain("reply_to_set");
     expect(result.checks.from_domain_not_primary).toBe(true);
     expect(result.checks.reply_to_set).toBe(false);
+    expect(result.warnings).toEqual([]);
   });
 
   it("ready:true once every non-advisory check passes", () => {
@@ -37,14 +48,13 @@ describe("buildOutreachPreflight", () => {
         fromAddress: "Outreach <hello@mail.outreach.example>",
         replyTo: null,
         postalAddress: "Humza Butt, United Kingdom",
+        allowPrimarySendingDomain: false,
       },
-      {
-        UNSUBSCRIBE_SIGNING_KEY: "unsub-secret",
-        RESEND_API_KEY: "re_test_key",
-      }
+      readyEnv
     );
     expect(result.ready).toBe(true);
     expect(result.blocking).toEqual([]);
+    expect(result.warnings).toEqual([]);
     expect(result.checks.reply_to_set).toBe(false);
   });
 
@@ -59,6 +69,7 @@ describe("buildOutreachPreflight", () => {
           fromAddress,
           replyTo: null,
           postalAddress: "UK",
+          allowPrimarySendingDomain: false,
         },
         {
           UNSUBSCRIBE_SIGNING_KEY: "k",
@@ -67,8 +78,29 @@ describe("buildOutreachPreflight", () => {
       );
       expect(result.checks.from_domain_not_primary).toBe(false);
       expect(result.blocking).toContain("from_domain_not_primary");
+      expect(result.warnings).toEqual([]);
       expect(result.ready).toBe(false);
     }
+  });
+
+  it("with allowPrimarySendingDomain, primary domain is a warning not a block", () => {
+    const result = buildOutreachPreflight(
+      {
+        sendingDomain: "mail.humza-butt.space",
+        fromAddress: "Outreach <outreach@mail.humza-butt.space>",
+        replyTo: null,
+        postalAddress: "UK",
+        allowPrimarySendingDomain: true,
+      },
+      {
+        UNSUBSCRIBE_SIGNING_KEY: "k",
+        RESEND_API_KEY: "re_x",
+      }
+    );
+    expect(result.checks.from_domain_not_primary).toBe(false);
+    expect(result.blocking).not.toContain("from_domain_not_primary");
+    expect(result.warnings).toEqual(["from_domain_not_primary"]);
+    expect(result.ready).toBe(true);
   });
 
   it("from_domain_not_primary true for a separate domain", () => {
@@ -78,6 +110,7 @@ describe("buildOutreachPreflight", () => {
         fromAddress: "hello@outreach.example",
         replyTo: "hello@outreach.example",
         postalAddress: "UK",
+        allowPrimarySendingDomain: false,
       },
       {
         UNSUBSCRIBE_SIGNING_KEY: "k",
@@ -85,6 +118,7 @@ describe("buildOutreachPreflight", () => {
       }
     );
     expect(result.checks.from_domain_not_primary).toBe(true);
+    expect(result.warnings).toEqual([]);
     expect(result.ready).toBe(true);
   });
 
@@ -97,6 +131,7 @@ describe("buildOutreachPreflight", () => {
         fromAddress: "hello@outreach.example",
         replyTo: null,
         postalAddress: "UK",
+        allowPrimarySendingDomain: false,
       },
       {
         UNSUBSCRIBE_SIGNING_KEY: secret,
@@ -108,6 +143,6 @@ describe("buildOutreachPreflight", () => {
     expect(json).not.toContain(secret);
     expect(json).not.toContain(resend);
     expect(json).not.toContain("should-not-leak");
-    expect(Object.keys(result)).toEqual(["ready", "checks", "blocking"]);
+    expect(Object.keys(result)).toEqual(["ready", "checks", "blocking", "warnings"]);
   });
 });

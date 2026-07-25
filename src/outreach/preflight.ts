@@ -18,12 +18,12 @@ export type OutreachPreflight = {
   ready: boolean;
   checks: PreflightChecks;
   blocking: PreflightCheckKey[];
+  warnings: PreflightCheckKey[];
 };
 
-const REQUIRED: PreflightCheckKey[] = [
+const ALWAYS_REQUIRED: PreflightCheckKey[] = [
   "sending_domain_set",
   "from_address_set",
-  "from_domain_not_primary",
   "postal_address_set",
   "unsubscribe_key_set",
   "resend_key_set",
@@ -42,7 +42,11 @@ type PreflightEnv = Pick<
 export function buildOutreachPreflight(
   settings: Pick<
     OutreachSettings,
-    "sendingDomain" | "fromAddress" | "replyTo" | "postalAddress"
+    | "sendingDomain"
+    | "fromAddress"
+    | "replyTo"
+    | "postalAddress"
+    | "allowPrimarySendingDomain"
   >,
   env: PreflightEnv
 ): OutreachPreflight {
@@ -59,10 +63,20 @@ export function buildOutreachPreflight(
     reply_to_set: Boolean(replyTo),
   };
 
-  const blocking = REQUIRED.filter((key) => !checks[key]);
+  const blocking = ALWAYS_REQUIRED.filter((key) => !checks[key]);
+  if (!settings.allowPrimarySendingDomain && !checks.from_domain_not_primary) {
+    blocking.push("from_domain_not_primary");
+  }
+
+  const warnings: PreflightCheckKey[] = [];
+  if (settings.allowPrimarySendingDomain && !checks.from_domain_not_primary) {
+    warnings.push("from_domain_not_primary");
+  }
+
   return {
     ready: blocking.length === 0,
     checks,
     blocking,
+    warnings,
   };
 }

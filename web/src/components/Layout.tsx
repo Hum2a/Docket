@@ -51,7 +51,8 @@ function OutreachChip() {
           setLabel(s.dryRun ? "Dry run" : "Paused");
           setTone(s.dryRun ? "dry" : "paused");
         } else {
-          setLabel("Live");
+          const hasWarnings = (preflight.warnings?.length ?? 0) > 0;
+          setLabel(hasWarnings ? "Live (warnings)" : "Live");
           setTone("live");
         }
       } catch {

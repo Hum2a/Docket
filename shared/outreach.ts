@@ -132,6 +132,8 @@ export type OutreachSettings = {
   followupOffsetsDays: number[];
   dryRun: boolean;
   pausedUntil: string | null;
+  /** When true, from-addresses on humza-butt.space are allowed (logged as a warning). */
+  allowPrimarySendingDomain: boolean;
   updatedAt: string;
 };
 
