@@ -26,7 +26,7 @@ type AppRow = {
 };
 
 /** Normalize DB date/timestamp values to YYYY-MM-DD (never "Mon Jul 20"). */
-function toDateOnly(value: unknown): string | null {
+export function toDateOnly(value: unknown): string | null {
   if (value == null || value === "") return null;
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) {
     return value.slice(0, 10);

@@ -8,6 +8,39 @@ import type {
   Stats,
   DocumentType,
 } from "@shared/schema";
+import type { CreateLead, Lead, OutreachSettings, UpdateLead } from "@shared/outreach";
+
+export type LeadNote = { id: number; leadId: number; body: string; createdAt: string };
+export type LeadReminder = {
+  id: number;
+  leadId: number;
+  dueDate: string;
+  message: string;
+  completed: boolean;
+  createdAt: string;
+};
+export type LeadMessage = {
+  id: number;
+  leadId: number;
+  direction: string;
+  channel: string;
+  subject: string | null;
+  body: string | null;
+  providerMessageId: string | null;
+  status: string;
+  error: string | null;
+  createdAt: string;
+};
+export type LeadStats = {
+  total: number;
+  byStatus: Record<string, number>;
+  funnel: { sourced: number; sent: number; replied: number; interested: number; won: number };
+  replyRate: number;
+  positiveReplyRate: number;
+  revenue: number;
+  reviewQueue: number;
+};
+export type OutreachSettingsView = OutreachSettings & { sentToday: number };
 
 const KEY_STORAGE = "docket_api_key";
 
@@ -148,4 +181,86 @@ export const api = {
       method: "POST",
       auth: true,
     }),
+
+  listLeads: (params?: Record<string, string>) => {
+    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+    return request<Lead[]>(`/api/leads${qs}`);
+  },
+  getLead: (id: number) => request<Lead>(`/api/leads/${id}`),
+  createLead: (body: CreateLead) =>
+    request<Lead>("/api/leads", { method: "POST", auth: true, body: JSON.stringify(body) }),
+  updateLead: (id: number, body: UpdateLead) =>
+    request<Lead>(`/api/leads/${id}`, { method: "PATCH", auth: true, body: JSON.stringify(body) }),
+  deleteLead: (id: number) =>
+    request<{ ok: boolean }>(`/api/leads/${id}`, { method: "DELETE", auth: true }),
+  bulkLeads: (leads: CreateLead[]) =>
+    request<{ created: number[]; updated: number[]; skipped: number; errors: string[] }>(
+      "/api/leads/bulk",
+      {
+        method: "POST",
+        auth: true,
+        body: JSON.stringify({ leads }),
+      }
+    ),
+  getLeadStats: () => request<LeadStats>("/api/leads/stats"),
+
+  listLeadNotes: (id: number) => request<LeadNote[]>(`/api/leads/${id}/notes`),
+  createLeadNote: (id: number, body: string) =>
+    request<LeadNote>(`/api/leads/${id}/notes`, {
+      method: "POST",
+      auth: true,
+      body: JSON.stringify({ body }),
+    }),
+  deleteLeadNote: (id: number) =>
+    request<{ ok: boolean }>(`/api/lead-notes/${id}`, { method: "DELETE", auth: true }),
+
+  listLeadReminders: (id: number) => request<LeadReminder[]>(`/api/leads/${id}/reminders`),
+  createLeadReminder: (id: number, dueDate: string, message: string) =>
+    request<LeadReminder>(`/api/leads/${id}/reminders`, {
+      method: "POST",
+      auth: true,
+      body: JSON.stringify({ dueDate, message }),
+    }),
+  toggleLeadReminder: (id: number, completed: boolean) =>
+    request<LeadReminder>(`/api/lead-reminders/${id}`, {
+      method: "PATCH",
+      auth: true,
+      body: JSON.stringify({ completed }),
+    }),
+  deleteLeadReminder: (id: number) =>
+    request<{ ok: boolean }>(`/api/lead-reminders/${id}`, { method: "DELETE", auth: true }),
+
+  listLeadMessages: (id: number) => request<LeadMessage[]>(`/api/leads/${id}/messages`),
+  sendLead: (id: number) =>
+    request<{ ok: boolean; dryRun?: boolean; reasons?: string[]; error?: string }>(
+      `/api/leads/${id}/send`,
+      { method: "POST", auth: true }
+    ),
+  approveLead: (id: number) =>
+    request<{ approved: boolean; ok?: boolean; dryRun?: boolean; reasons?: string[] }>(
+      `/api/leads/${id}/approve`,
+      { method: "POST", auth: true }
+    ),
+
+  getOutreachSettings: () => request<OutreachSettingsView>("/api/outreach/settings"),
+  updateOutreachSettings: (body: Record<string, unknown>) =>
+    request<OutreachSettingsView>("/api/outreach/settings", {
+      method: "PATCH",
+      auth: true,
+      body: JSON.stringify(body),
+    }),
+  addSuppression: (value: string, kind: "email" | "domain", reason?: string) =>
+    request<{ ok: boolean }>("/api/suppressions", {
+      method: "POST",
+      auth: true,
+      body: JSON.stringify({ value, kind, reason }),
+    }),
+  runAutosend: () =>
+    request<{ results: unknown[] }>("/api/outreach/autosend", { method: "POST", auth: true }),
+  runSequence: () =>
+    request<{ results: unknown[] }>("/api/outreach/sequence", { method: "POST", auth: true }),
+  exportLeadsCsvUrl: (params?: Record<string, string>) => {
+    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+    return `/api/outreach/export.csv${qs}`;
+  },
 };

@@ -19,7 +19,7 @@ bucket_name = "docket-documents"
 preview_bucket_name = "docket-documents"
 
 [triggers]
-crons = ["0 8 * * *"]
+crons = ["0 8 * * *", "0 9 * * 1-5", "0 10 * * 1-5"]
 
 # Secrets (set via wrangler secret put, not committed):
 #   DATABASE_URL
@@ -27,3 +27,5 @@ crons = ["0 8 * * *"]
 #   RESEND_API_KEY (optional)
 #   DIGEST_TO (optional)
 #   DIGEST_FROM (optional)
+#   OUTREACH_FROM / OUTREACH_REPLY_TO / OUTREACH_POSTAL_ADDRESS
+#   RESEND_INBOUND_SECRET / UNSUBSCRIBE_SIGNING_KEY

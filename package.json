@@ -19,7 +19,14 @@
     "secrets:key": "wrangler secret put API_KEY",
     "secrets:resend": "wrangler secret put RESEND_API_KEY",
     "secrets:digest-to": "wrangler secret put DIGEST_TO",
-    "secrets:digest-from": "wrangler secret put DIGEST_FROM"
+    "secrets:digest-from": "wrangler secret put DIGEST_FROM",
+    "secrets:outreach-from": "wrangler secret put OUTREACH_FROM",
+    "secrets:outreach-reply": "wrangler secret put OUTREACH_REPLY_TO",
+    "secrets:outreach-postal": "wrangler secret put OUTREACH_POSTAL_ADDRESS",
+    "secrets:resend-inbound": "wrangler secret put RESEND_INBOUND_SECRET",
+    "secrets:unsub-key": "wrangler secret put UNSUBSCRIBE_SIGNING_KEY",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -41,6 +48,7 @@
     "concurrently": "^10.0.3",
     "typescript": "^5.7.2",
     "vite": "^8.1.5",
+    "vitest": "^4.1.10",
     "wrangler": "^3.99.0",
     "ws": "^8.21.1"
   }

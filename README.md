@@ -1,14 +1,15 @@
 # Docket
 
-Personal single-owner job application tracker — Board, List, Detail, Stats, Settings — served as a React SPA from a Cloudflare Worker (Hono) with Neon Postgres, R2 document storage, and optional Resend emails (create/status alerts + daily digests).
+Personal single-owner job application tracker **and** parallel Outreach (client leads) pipeline — Board, List, Detail, Stats, Settings — served as a React SPA from a Cloudflare Worker (Hono) with Neon Postgres, R2 document storage, and optional Resend emails (job digests + outreach sends).
 
 ## Stack
 
 - **Frontend:** React + Vite + React Router + Recharts + `@dnd-kit`
 - **API:** Cloudflare Worker (Hono)
-- **DB:** Neon Postgres (`migrations/001_docket_schema.sql`)
+- **DB:** Neon Postgres (`migrations/001_docket_schema.sql`, `002_app_settings.sql`, `003_outreach_schema.sql`)
 - **Files:** R2 bucket `docket-documents` (binding `DOCS`)
 - **Auth:** No login. Writes require `X-Api-Key`. Reads are open.
+- **Tests:** Vitest (`npm test`) for outreach gate helpers
 
 ## First-time setup
 
@@ -24,6 +25,11 @@ Personal single-owner job application tracker — Board, List, Detail, Stats, Se
    RESEND_API_KEY=
    DIGEST_TO=
    DIGEST_FROM=
+   OUTREACH_FROM=
+   OUTREACH_REPLY_TO=
+   OUTREACH_POSTAL_ADDRESS=
+   RESEND_INBOUND_SECRET=
+   UNSUBSCRIBE_SIGNING_KEY=
    ```
 
 3. **Migrate Neon** (reads `DATABASE_URL` from `.dev.vars`):
@@ -53,11 +59,16 @@ Personal single-owner job application tracker — Board, List, Detail, Stats, Se
    ```bash
    npm run secrets:db          # DATABASE_URL
    npm run secrets:key         # API_KEY
-   npm run secrets:resend      # RESEND_API_KEY (event emails + digests)
+   npm run secrets:resend      # RESEND_API_KEY (event emails + digests + outreach)
    npm run secrets:digest-to   # DIGEST_TO (your inbox)
    npm run secrets:digest-from # DIGEST_FROM e.g. Docket <alerts@your-verified-domain>
+   npm run secrets:outreach-from
+   npm run secrets:outreach-reply
+   npm run secrets:outreach-postal
+   npm run secrets:resend-inbound
+   npm run secrets:unsub-key
    ```
-   After Resend is set, use **Settings → Send test email** to verify delivery.
+   After Resend is set, use **Settings → Send test email** to verify job digests. Outreach uses `OUTREACH_FROM` (not the digest From).
 
 7. **Build & deploy**
    ```bash
@@ -88,10 +99,31 @@ npx wrangler dev
 | `npm run build:web` | Build React app → `dist/` |
 | `npm run deploy` | Build + `wrangler deploy` |
 | `npm run typecheck` | Worker + web TypeScript |
+| `npm test` | Vitest (`canAutoSend` + bulk helpers) |
 | `npm run db:migrate` | Apply pending `migrations/*.sql` |
 | `npm run db:status` | Show applied vs pending migrations |
 | `npm run db:ping` | Test DB connectivity |
 | `npm run r2:create` | Create R2 buckets for docs |
+
+## Modes (UI)
+
+Header switch **Job Search | Outreach** (`localStorage` + `/outreach/*` routes). Job-search routes stay at `/`, `/list`, `/apps/:id`, `/stats`, `/settings`.
+
+Outreach pages: Board, List (+ CSV export), Queue (approve/send), Detail (audit/scores/thread), Stats, Settings (pause / dry_run / auto_send). Status chip shows **Live / Dry run / Paused**.
+
+## Outreach
+
+Additive schema in `migrations/003_outreach_schema.sql` (`leads`, `lead_notes`, `lead_reminders`, `lead_messages`, `suppressions`, `outreach_settings`). Seed defaults: `auto_send_enabled=false`, `dry_run=true`, threshold `8.0`, daily cap `20`, follow-up offsets `{3,7}`.
+
+Autosend is gated by `canAutoSend` (PECR corporate-subscriber rule, verified non-freemail, demo ready, daily cap, etc.). Dry run queues `lead_messages` without calling Resend. Outreach From is `OUTREACH_FROM` / settings — never the job digest sender.
+
+### Crons (`wrangler.toml`)
+
+| Cron | Job |
+|---|---|
+| `0 8 * * *` | Job reminder digest |
+| `0 9 * * 1-5` | Outreach autosend |
+| `0 10 * * 1-5` | Outreach follow-up sequence |
 
 ## API overview
 
@@ -112,6 +144,25 @@ npx wrangler dev
 | GET/PATCH | `/api/settings` | write: key |
 | POST | `/api/digest/run` | key |
 | POST | `/api/email/test` | key |
+| GET/POST | `/api/leads` | write: key |
+| POST | `/api/leads/bulk` | key |
+| GET | `/api/leads/stats` | — |
+| GET/PATCH/DELETE | `/api/leads/:id` | write: key |
+| GET/POST | `/api/leads/:id/notes` | write: key |
+| DELETE | `/api/lead-notes/:id` | key |
+| GET/POST | `/api/leads/:id/reminders` | write: key |
+| PATCH/DELETE | `/api/lead-reminders/:id` | key |
+| GET | `/api/leads/:id/messages` | — |
+| POST | `/api/leads/:id/send` | key |
+| POST | `/api/leads/:id/approve` | key |
+| GET/PATCH | `/api/outreach/settings` | write: key |
+| GET | `/api/outreach/export.csv` | — |
+| POST | `/api/outreach/autosend` | key |
+| POST | `/api/outreach/sequence` | key |
+| POST | `/api/suppressions` | key |
+| GET/POST | `/api/unsubscribe` | signed |
+| POST | `/api/webhooks/resend` | — |
+| POST | `/api/webhooks/inbound` | inbound secret |
 
 When `RESEND_API_KEY` is set and at least one recipient exists (Settings → Notify emails, or `DIGEST_TO` fallback), creating an application or changing its status sends a detailed email (bulk import does not). From address defaults to `Docket <Docket@Humza-Butt.space>`. Daily cron (`0 8 * * *`) still runs the reminder digest.
 
@@ -142,3 +193,4 @@ When `RESEND_API_KEY` is set and at least one recipient exists (Settings → Not
 - Reminder fields are not editable after create (toggle complete / delete)
 - App deletes confirm; notes / reminders / docs do not
 - Due soon = incomplete reminder due within 3 days
+- Outreach bulk upsert never overwrites send/reply/status history fields

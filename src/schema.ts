@@ -18,5 +18,10 @@ export interface Env {
   RESEND_API_KEY?: string;
   DIGEST_TO?: string;
   DIGEST_FROM?: string;
+  OUTREACH_FROM?: string;
+  OUTREACH_REPLY_TO?: string;
+  OUTREACH_POSTAL_ADDRESS?: string;
+  RESEND_INBOUND_SECRET?: string;
+  UNSUBSCRIBE_SIGNING_KEY?: string;
   ASSETS: Fetcher;
 }

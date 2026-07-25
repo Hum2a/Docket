@@ -42,6 +42,11 @@ import {
   sendTestEventEmail,
 } from "./notify";
 import { DEFAULT_FROM, parseEmailList } from "./email";
+import {
+  outreachApp,
+  runOutreachAutosend,
+  runOutreachSequence,
+} from "./outreach-routes";
 
 type AppContext = { Bindings: Env };
 
@@ -59,6 +64,7 @@ function background(c: Context<AppContext>, task: Promise<unknown>) {
 }
 
 app.use("/api/*", cors());
+app.route("/", outreachApp);
 
 async function requireApiKey(c: Context<AppContext>, next: Next) {
   const key = c.req.header("X-Api-Key");
@@ -509,8 +515,18 @@ app.post("/api/email/test", requireApiKey, async (c) => {
 export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+    const cron = event.cron;
     ctx.waitUntil(
       (async () => {
+        if (cron === "0 9 * * 1-5") {
+          await runOutreachAutosend(env, "https://jobtracker.humza-butt.space");
+          return;
+        }
+        if (cron === "0 10 * * 1-5") {
+          await runOutreachSequence(env, "https://jobtracker.humza-butt.space");
+          return;
+        }
+        // Default: daily reminder digest (0 8 * * *)
         const sql = getSql(env.DATABASE_URL);
         await runDigest({
           sql,

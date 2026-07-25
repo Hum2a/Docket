@@ -702,3 +702,144 @@ table.data .status-select {
   padding: 0.7rem 0.9rem;
   margin-bottom: 1rem;
 }
+
+.success-banner {
+  background: rgba(15, 110, 86, 0.1);
+  color: var(--accent);
+  border: 1px solid rgba(15, 110, 86, 0.25);
+  border-radius: 10px;
+  padding: 0.7rem 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.mode-switch {
+  display: flex;
+  gap: 0.15rem;
+  padding: 0.2rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(213, 221, 232, 0.9);
+}
+
+.mode-switch button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 500;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.mode-switch button.active {
+  background: var(--ink);
+  color: white;
+}
+
+.outreach-chip {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 0.28rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+}
+
+.outreach-chip.tone-live {
+  background: rgba(15, 110, 86, 0.12);
+  color: var(--accent);
+  border-color: rgba(15, 110, 86, 0.3);
+}
+
+.outreach-chip.tone-dry {
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+.outreach-chip.tone-paused {
+  background: rgba(90, 101, 120, 0.12);
+  color: var(--muted);
+}
+
+.board-wide {
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+}
+
+.board-wide .column {
+  min-width: 220px;
+}
+
+.reason-list {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+}
+
+.audit-json {
+  font-size: 0.75rem;
+  overflow: auto;
+  max-height: 220px;
+  background: rgba(26, 35, 50, 0.04);
+  padding: 0.75rem;
+  border-radius: 8px;
+}
+
+.thread-list,
+.note-list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.thread-list li,
+.note-list li {
+  border-top: 1px solid var(--line);
+  padding-top: 0.65rem;
+}
+
+.stack-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.detail-side {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.settings-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.empty-pad {
+  padding: 1.25rem;
+}
+
+.status-select.lead-status {
+  max-width: 100%;
+  font-size: 0.8rem;
+}
