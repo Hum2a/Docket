@@ -8,6 +8,7 @@ routes = [
 ]
 
 # Built React SPA (npm run build:web → dist/)
+# Non-API SPA routes: Worker notFound delegates to ASSETS (see src/index.ts).
 [assets]
 directory = "./dist"
 binding = "ASSETS"

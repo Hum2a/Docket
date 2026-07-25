@@ -510,7 +510,14 @@ app.post("/api/email/test", requireApiKey, async (c) => {
   return c.json(result);
 });
 
-// SPA fallback for non-API routes is handled by assets binding + not_found_handling
+// Non-API misses: serve SPA via assets (needed when Worker runs before assets,
+// e.g. older compatibility dates without navigation prefers-asset-serving).
+app.notFound((c) => {
+  if (c.req.path.startsWith("/api/")) {
+    return c.json({ error: "not found" }, 404);
+  }
+  return c.env.ASSETS.fetch(c.req.raw);
+});
 
 export default {
   fetch: app.fetch,
