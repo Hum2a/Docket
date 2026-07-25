@@ -510,13 +510,14 @@ app.post("/api/email/test", requireApiKey, async (c) => {
   return c.json(result);
 });
 
-// Non-API misses: serve SPA via assets (needed when Worker runs before assets,
-// e.g. older compatibility dates without navigation prefers-asset-serving).
-app.notFound((c) => {
-  if (c.req.path.startsWith("/api/")) {
+// Worker main receives non-asset requests; assets not_found_handling does not run.
+// Serve the SPA shell for client GET routes; keep JSON 404s for unknown /api/* paths.
+app.get("*", async (c) => {
+  const url = new URL(c.req.url);
+  if (url.pathname.startsWith("/api/")) {
     return c.json({ error: "not found" }, 404);
   }
-  return c.env.ASSETS.fetch(c.req.raw);
+  return c.env.ASSETS.fetch(new Request(new URL("/index.html", url.origin), c.req.raw));
 });
 
 export default {
