@@ -65,6 +65,9 @@ function mapLead(row: LeadRow): Lead {
     source: (row.source as string) ?? null,
     sourceRef: (row.source_ref as string) ?? null,
     reviewReasons: Array.isArray(row.review_reasons) ? (row.review_reasons as string[]) : [],
+    customSubject: (row.custom_subject as string) ?? null,
+    customBody: (row.custom_body as string) ?? null,
+    draftUpdatedAt: row.draft_updated_at ? String(row.draft_updated_at) : null,
   };
 }
 
@@ -369,6 +372,15 @@ export async function updateLead(sql: Sql, id: number, updates: UpdateLead): Pro
   if (updates.offerAmount !== undefined) add("offer_amount", updates.offerAmount);
   if (updates.source !== undefined) add("source", updates.source);
   if (updates.sourceRef !== undefined) add("source_ref", updates.sourceRef);
+  if (updates.customSubject !== undefined || updates.customBody !== undefined) {
+    if (updates.customSubject !== undefined) {
+      add("custom_subject", updates.customSubject);
+    }
+    if (updates.customBody !== undefined) {
+      add("custom_body", updates.customBody);
+    }
+    add("draft_updated_at", new Date().toISOString());
+  }
 
   if (becomingReady) {
     add("demo_expires_at", demoExpiresAtFrom());
@@ -659,7 +671,7 @@ export async function getInitialOutboundProviderId(
     SELECT provider_message_id FROM lead_messages
     WHERE lead_id = ${leadId}
       AND direction = 'out'
-      AND template_id = 'initial'
+      AND template_id IN ('initial', 'custom')
       AND provider_message_id IS NOT NULL
       AND provider_message_id <> ''
     ORDER BY created_at ASC

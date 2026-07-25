@@ -11,13 +11,15 @@ export type ObservationSignal =
   | "lcp_ms"
   | "psi_mobile"
   | "broken_links"
+  | "broken_form"
+  | "cms_outdated"
   | "footer_year"
   | "builder"
   | "generic";
 
 export type SubjectVariant = "A" | "B" | "C" | "D";
 
-export type OutreachTemplateId = "initial" | "followup" | "final";
+export type OutreachTemplateId = "initial" | "followup" | "final" | "custom";
 
 export type OutreachAuditMeta = {
   signal: ObservationSignal;
@@ -197,6 +199,38 @@ export function pickObservation(
     };
   }
 
+  const brokenForm = audit.broken_form;
+  if (brokenForm && typeof brokenForm === "object" && !Array.isArray(brokenForm)) {
+    const bf = brokenForm as Record<string, unknown>;
+    const name = typeof bf.name === "string" ? bf.name.trim() : "";
+    const fault = typeof bf.fault === "string" ? bf.fault.trim() : "";
+    if (name && fault) {
+      return {
+        signal: "broken_form",
+        line: `The ${name} on ${domain} ${fault} — so nobody can complete it properly.`,
+      };
+    }
+  }
+
+  const cmsOutdated = audit.cms_outdated;
+  if (cmsOutdated && typeof cmsOutdated === "object" && !Array.isArray(cmsOutdated)) {
+    const cms = cmsOutdated as Record<string, unknown>;
+    const cmsName = typeof cms.cms === "string" ? cms.cms.trim() : "";
+    const version = typeof cms.version === "string" ? cms.version.trim() : "";
+    const eol =
+      typeof cms.eol_year === "number"
+        ? cms.eol_year
+        : typeof cms.eol_year === "string" && Number.isFinite(Number(cms.eol_year))
+          ? Number(cms.eol_year)
+          : null;
+    if (cmsName && version && eol != null) {
+      return {
+        signal: "cms_outdated",
+        line: `${domain} is running ${cmsName} ${version}, which stopped getting security updates in ${Math.round(eol)}.`,
+      };
+    }
+  }
+
   const footerYear = auditNum(audit, "footer_year");
   const currentYear = now.getFullYear();
   if (footerYear != null && footerYear <= currentYear - 5) {
@@ -209,7 +243,7 @@ export function pickObservation(
   if (typeof audit.builder === "string" && audit.builder.trim()) {
     return {
       signal: "builder",
-      line: `${domain} is on a stock ${audit.builder.trim()} template — the same one a lot of firms are using.`,
+      line: `${domain} is built on ${audit.builder.trim()}, and hasn't had much attention since it went up.`,
     };
   }
 
@@ -232,6 +266,10 @@ export function consequenceLine(signal: ObservationSignal): string {
     case "lcp_ms":
     case "psi_mobile":
       return "Roughly two-thirds of people who look you up will be doing it on a phone.";
+    case "broken_form":
+      return "Anyone who tried to get in touch through that form never reached you.";
+    case "cms_outdated":
+      return "Unpatched sites are the ones that get defaced — it's usually automated, not personal.";
     case "footer_year":
     case "builder":
     case "broken_links":
@@ -281,6 +319,29 @@ export function appendFooter(
   return `${body.trim()}\n\n--\nHumza Butt · ${postalAddress}\nDon't want these? ${unsubscribeUrl}\n`;
 }
 
+/**
+ * For the initial step only: if a hand-written body is set, use it verbatim and
+ * still append the system footer. Follow-ups ignore custom fields.
+ */
+export function applyCustomInitialCopy(
+  generated: RenderedOutreach,
+  customBody: string | null | undefined,
+  customSubject: string | null | undefined,
+  postalAddress: string,
+  unsubscribeUrl: string
+): RenderedOutreach {
+  if (generated.templateId !== "initial") return generated;
+  const body = customBody?.trim();
+  if (!body) return generated;
+  return {
+    subject: customSubject?.trim() || generated.subject,
+    text: appendFooter(body, postalAddress, unsubscribeUrl),
+    variant: generated.variant,
+    signal: generated.signal,
+    templateId: "custom",
+  };
+}
+
 function wordCount(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
@@ -306,7 +367,7 @@ export function absoluteFollowupAt(sentAt: Date | string, offsetDays: number): s
 export function resolveTemplateId(
   followupStep: number,
   explicit?: string
-): OutreachTemplateId {
+): Exclude<OutreachTemplateId, "custom"> {
   if (explicit === "initial" || explicit === "followup" || explicit === "final") {
     return explicit;
   }

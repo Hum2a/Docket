@@ -14,6 +14,7 @@ const sendResendEmail = vi.fn();
 vi.mock("../outreach-db", () => ({
   countSentToday: (...args: unknown[]) => countSentToday(...args),
   createLeadReminder: (...args: unknown[]) => createLeadReminder(...args),
+  getInitialOutboundProviderId: async () => null,
   getLeadMessageByIdempotency: (...args: unknown[]) => getLeadMessageByIdempotency(...args),
   insertLeadMessage: (...args: unknown[]) => insertLeadMessage(...args),
   isSuppressed: (...args: unknown[]) => isSuppressed(...args),
@@ -96,6 +97,9 @@ function baseLead(over: Partial<Lead> = {}): Lead {
     source: null,
     sourceRef: null,
     reviewReasons: [],
+    customSubject: null,
+    customBody: null,
+    draftUpdatedAt: null,
     ...over,
   };
 }
@@ -344,5 +348,125 @@ describe("sendLeadOutreach fail-closed", () => {
     });
     expect(result.reasons).toEqual(["unsubscribe_key_not_configured"]);
     expect(insertLeadMessage).not.toHaveBeenCalled();
+  });
+
+  it("custom_body is sent verbatim with footer once and templateId custom", async () => {
+    const customBody = "Hi,\n\nThis is the hand-written draft for Saunders.\n\nHumza";
+    const result = await sendLeadOutreach({
+      sql,
+      env: baseEnv(),
+      lead: baseLead({
+        customBody,
+        customSubject: "the MOT reminder form on your site",
+      }),
+      settings: baseSettings({ dryRun: true }),
+      origin: "https://example.com",
+      force: true,
+    });
+    expect(result.dryRun).toBe(true);
+    expect(insertLeadMessage).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        templateId: "custom",
+        subject: "the MOT reminder form on your site",
+        body: expect.stringContaining(customBody),
+      })
+    );
+    const body = String(insertLeadMessage.mock.calls[0]?.[1]?.body ?? "");
+    expect(body.split(/\n--\n/).length).toBe(2);
+    expect(body).toContain("Don't want these?");
+    expect(body).toContain("Humza Butt · Humza Butt, United Kingdom");
+  });
+
+  it("custom_body does not weaken PECR, freemail, suppression, or demo gates", async () => {
+    const withDraft = {
+      customBody: "Hi,\n\nHand-written.\n\nHumza",
+      customSubject: "custom subject",
+    };
+
+    insertLeadMessage.mockClear();
+    const sole = await sendLeadOutreach({
+      sql,
+      env: baseEnv(),
+      lead: baseLead({ ...withDraft, corporateSubscriber: false }),
+      settings: baseSettings(),
+      origin: "https://example.com",
+      force: true,
+    });
+    expect(sole.reasons).toContain("not_corporate_subscriber");
+    expect(insertLeadMessage).not.toHaveBeenCalled();
+
+    const freemail = await sendLeadOutreach({
+      sql,
+      env: baseEnv(),
+      lead: baseLead({ ...withDraft, contactEmail: "a@gmail.com" }),
+      settings: baseSettings(),
+      origin: "https://example.com",
+      force: true,
+    });
+    expect(freemail.reasons).toContain("freemail_address");
+
+    const suppressed = await sendLeadOutreach({
+      sql,
+      env: baseEnv(),
+      lead: baseLead({ ...withDraft, suppressed: true }),
+      settings: baseSettings(),
+      origin: "https://example.com",
+      force: true,
+    });
+    expect(suppressed.reasons).toContain("lead_suppressed");
+
+    const noDemo = await sendLeadOutreach({
+      sql,
+      env: baseEnv(),
+      lead: baseLead({
+        ...withDraft,
+        demoStatus: "none",
+        demoUrl: null,
+        status: "qualified",
+      }),
+      settings: baseSettings(),
+      origin: "https://example.com",
+      force: true,
+    });
+    expect(noDemo.reasons).toEqual(
+      expect.arrayContaining(["demo_not_ready", "status_not_sendable"])
+    );
+  });
+
+  it("follow-up step ignores initial custom_body and uses generated template", async () => {
+    insertLeadMessage.mockClear();
+    const result = await sendLeadOutreach({
+      sql,
+      env: baseEnv(),
+      lead: baseLead({
+        followupStep: 1,
+        status: "sent",
+        sentAt: new Date().toISOString(),
+        customBody: "THIS CUSTOM BODY MUST NOT APPEAR IN FOLLOWUP",
+        customSubject: "custom subject must not win",
+        audit: {
+          outreach: {
+            signal: "broken_links",
+            subjectVariant: "A",
+            originalSubject: "demo site for Acme Ltd",
+          },
+        },
+      }),
+      settings: baseSettings({ dryRun: true, autoSendEnabled: true }),
+      origin: "https://example.com",
+      force: true,
+      templateId: "followup",
+    });
+    expect(result.dryRun).toBe(true);
+    expect(insertLeadMessage).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        templateId: "followup",
+        body: expect.not.stringContaining("THIS CUSTOM BODY MUST NOT APPEAR IN FOLLOWUP"),
+      })
+    );
+    const body = String(insertLeadMessage.mock.calls[0]?.[1]?.body ?? "");
+    expect(body).toContain("The demo's still up");
   });
 });

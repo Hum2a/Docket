@@ -63,6 +63,8 @@ export const createLeadSchema = z.object({
   offerAmount: z.number().optional(),
   source: z.string().optional().nullable(),
   sourceRef: z.string().optional().nullable(),
+  customSubject: z.string().max(300).nullable().optional(),
+  customBody: z.string().nullable().optional(),
 });
 
 export type CreateLead = z.infer<typeof createLeadSchema>;
@@ -118,6 +120,11 @@ export type Lead = {
   source: string | null;
   sourceRef: string | null;
   reviewReasons: string[];
+  /** Hand-written initial subject; null falls back to generated. */
+  customSubject: string | null;
+  /** Hand-written initial body (footer still appended by the system). */
+  customBody: string | null;
+  draftUpdatedAt: string | null;
 };
 
 export type OutreachSettings = {

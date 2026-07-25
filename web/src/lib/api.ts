@@ -203,6 +203,15 @@ export const api = {
     return request<{ leads: Lead[]; nextCursor: string | null; total: number }>(`/api/leads${qs}`);
   },
   getLead: (id: number) => request<Lead>(`/api/leads/${id}`),
+  getOutreachPreview: (id: number) =>
+    request<{
+      subject: string;
+      text: string;
+      bodyBeforeFooter: string;
+      templateId: string;
+      source: "custom" | "generated";
+      signal: string;
+    }>(`/api/leads/${id}/outreach-preview`, { auth: true }),
   createLead: (body: CreateLead) =>
     request<Lead>("/api/leads", { method: "POST", auth: true, body: JSON.stringify(body) }),
   updateLead: (id: number, body: UpdateLead) =>

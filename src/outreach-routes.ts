@@ -34,12 +34,13 @@ import {
   updateLead,
   updateOutreachSettings,
 } from "./outreach-db";
-import { sendLeadOutreach, verifyUnsubscribeToken } from "./outreach-send";
-import { resolveNotifyRecipients } from "./db";
-import { DEFAULT_FROM, sendResendEmail } from "./email";
-import { bareDomain } from "./outreach/copy";
+import { bareDomain, applyCustomInitialCopy, renderOutreachCopy, resolvePostalAddress, resolveTemplateId } from "./outreach/copy";
 import { emailDomain } from "./outreach/canAutoSend";
 import { buildOutreachPreflight } from "./outreach/preflight";
+import { validateCustomBody } from "./outreach/draft";
+import { sendLeadOutreach, signUnsubscribeToken, verifyUnsubscribeToken } from "./outreach-send";
+import { resolveNotifyRecipients } from "./db";
+import { DEFAULT_FROM, sendResendEmail } from "./email";
 
 type AppContext = { Bindings: Env };
 
@@ -133,6 +134,12 @@ outreachApp.patch("/api/leads/:id", requireApiKey, async (c) => {
   }
   const parsed = updateLeadSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
+
+  if (parsed.data.customBody !== undefined && parsed.data.customBody !== null) {
+    const check = validateCustomBody(parsed.data.customBody);
+    if (!check.ok) return c.json({ error: check.error }, 400);
+  }
+
   const sql = getSql(c.env.DATABASE_URL);
   try {
     const lead = await updateLead(sql, id, parsed.data);
@@ -143,6 +150,68 @@ outreachApp.patch("/api/leads/:id", requireApiKey, async (c) => {
     console.error(JSON.stringify({ msg: "patch_lead_failed", id, message }));
     return c.json({ error: "update_failed", message }, 500);
   }
+});
+
+outreachApp.get("/api/leads/:id/outreach-preview", requireApiKey, async (c) => {
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id)) return c.json({ error: "id must be an integer" }, 400);
+  const sql = getSql(c.env.DATABASE_URL);
+  const lead = await getLeadById(sql, id);
+  if (!lead) return c.json({ error: "not found" }, 404);
+  const settings = await getOutreachSettings(sql);
+  const postal = resolvePostalAddress(settings, c.env);
+  if (!postal) {
+    return c.json({ error: "postal_address_not_configured" }, 400);
+  }
+  const secret = c.env.UNSUBSCRIBE_SIGNING_KEY?.trim();
+  if (!secret) {
+    return c.json({ error: "unsubscribe_key_not_configured" }, 400);
+  }
+  const token = await signUnsubscribeToken(
+    secret,
+    lead.id,
+    lead.contactEmail || "preview@example.com"
+  );
+  const origin = new URL(c.req.url).origin;
+  const unsubUrl = `${origin}/api/unsubscribe?token=${encodeURIComponent(token)}`;
+  const templateId = resolveTemplateId(lead.followupStep);
+  const copyLead = {
+    id: lead.id,
+    businessName: lead.businessName,
+    slug: lead.slug,
+    industry: lead.industry,
+    location: lead.location,
+    contactName: lead.contactName,
+    websiteUrl: lead.websiteUrl,
+    demoUrl: lead.demoUrl,
+    demoExpiresAt: lead.demoExpiresAt,
+    offerAmount: Number(lead.offerAmount || 500),
+    audit: lead.audit || {},
+  };
+  const generated = renderOutreachCopy({
+    lead: copyLead,
+    postalAddress: postal,
+    unsubscribeUrl: unsubUrl,
+    templateId,
+  });
+  const rendered =
+    templateId === "initial"
+      ? applyCustomInitialCopy(
+          generated,
+          lead.customBody,
+          lead.customSubject,
+          postal,
+          unsubUrl
+        )
+      : generated;
+  return c.json({
+    subject: rendered.subject,
+    text: rendered.text,
+    bodyBeforeFooter: rendered.text.split(/\n--\n/)[0]?.trim() ?? "",
+    templateId: rendered.templateId,
+    source: rendered.templateId === "custom" ? "custom" : "generated",
+    signal: rendered.signal,
+  });
 });
 
 outreachApp.delete("/api/leads/:id", requireApiKey, async (c) => {

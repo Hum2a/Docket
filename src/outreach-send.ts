@@ -16,6 +16,7 @@ import {
 import { canAutoSend, emailDomain } from "./outreach/canAutoSend";
 import {
   absoluteFollowupAt,
+  applyCustomInitialCopy,
   renderOutreachCopy,
   resolvePostalAddress,
   resolveTemplateId,
@@ -254,7 +255,30 @@ export async function sendLeadOutreach(opts: {
   }
 
   const step = lead.followupStep;
-  const idempotencyKey = await makeIdempotencyKey(lead.id, templateId, step);
+  const token = await signUnsubscribeToken(secret, lead.id, lead.contactEmail);
+  const unsubUrl = `${origin}/api/unsubscribe?token=${encodeURIComponent(token)}`;
+
+  const generated = renderOutreachCopy({
+    lead: toCopyLead(lead),
+    postalAddress: postal,
+    unsubscribeUrl: unsubUrl,
+    templateId,
+  });
+  const rendered =
+    templateId === "initial"
+      ? applyCustomInitialCopy(
+          generated,
+          lead.customBody,
+          lead.customSubject,
+          postal,
+          unsubUrl
+        )
+      : generated;
+  const messageTemplateId = rendered.templateId;
+  const subject = rendered.subject;
+  const text = rendered.text;
+
+  const idempotencyKey = await makeIdempotencyKey(lead.id, messageTemplateId, step);
   const existing = await getLeadMessageByIdempotency(sql, idempotencyKey);
   if (existing) {
     return {
@@ -266,16 +290,6 @@ export async function sendLeadOutreach(opts: {
     };
   }
 
-  const token = await signUnsubscribeToken(secret, lead.id, lead.contactEmail);
-  const unsubUrl = `${origin}/api/unsubscribe?token=${encodeURIComponent(token)}`;
-
-  const rendered = renderOutreachCopy({
-    lead: toCopyLead(lead),
-    postalAddress: postal,
-    unsubscribeUrl: unsubUrl,
-    templateId,
-  });
-  const text = rendered.text;
   const replyTo = settings.replyTo || env.OUTREACH_REPLY_TO || undefined;
 
   const threadHeaders: Record<string, string> = {
@@ -292,13 +306,15 @@ export async function sendLeadOutreach(opts: {
   }
 
   async function persistAuditOnInitial() {
-    if (templateId !== "initial" || !rendered.variant) return;
+    if (templateId !== "initial") return;
+    const variant = rendered.variant ?? generated.variant;
+    if (!variant) return;
     const audit = {
       ...lead.audit,
       outreach: {
         signal: rendered.signal,
-        subjectVariant: rendered.variant,
-        originalSubject: rendered.subject,
+        subjectVariant: variant,
+        originalSubject: subject,
       },
     };
     await updateLead(sql, lead.id, { audit });
@@ -310,9 +326,9 @@ export async function sendLeadOutreach(opts: {
       leadId: lead.id,
       direction: "out",
       channel: "email",
-      subject: rendered.subject,
+      subject,
       body: text,
-      templateId,
+      templateId: messageTemplateId,
       variant: rendered.variant,
       idempotencyKey,
       status: "queued",
@@ -331,7 +347,7 @@ export async function sendLeadOutreach(opts: {
     to: lead.contactEmail,
     from,
     replyTo,
-    subject: rendered.subject,
+    subject,
     text,
     headers: threadHeaders,
     disableTracking: true,
@@ -342,9 +358,9 @@ export async function sendLeadOutreach(opts: {
       leadId: lead.id,
       direction: "out",
       channel: "email",
-      subject: rendered.subject,
+      subject,
       body: text,
-      templateId,
+      templateId: messageTemplateId,
       variant: rendered.variant,
       idempotencyKey,
       status: "failed",
@@ -365,9 +381,9 @@ export async function sendLeadOutreach(opts: {
     leadId: lead.id,
     direction: "out",
     channel: "email",
-    subject: rendered.subject,
+    subject,
     body: text,
-    templateId,
+    templateId: messageTemplateId,
     variant: rendered.variant,
     providerMessageId: result.id ?? null,
     idempotencyKey,

@@ -5,6 +5,193 @@ import { api, type LeadMessage, type LeadNote, type LeadReminder } from "../../l
 import { LeadStatusSelect } from "../../components/LeadStatusSelect";
 import { blockingTooltip, useOutreachPreflight } from "../../lib/useOutreachPreflight";
 
+function DraftPanel({
+  lead,
+  onLeadUpdated,
+  onError,
+}: {
+  lead: Lead;
+  onLeadUpdated: (lead: Lead) => void;
+  onError: (msg: string | null) => void;
+}) {
+  const hasCustom = Boolean(lead.customBody?.trim());
+  const [editing, setEditing] = useState(hasCustom);
+  const [subject, setSubject] = useState(lead.customSubject ?? "");
+  const [body, setBody] = useState(lead.customBody ?? "");
+  const [preview, setPreview] = useState<{
+    subject: string;
+    text: string;
+    source: string;
+    bodyBeforeFooter: string;
+  } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const loadPreview = useCallback(async () => {
+    try {
+      const p = await api.getOutreachPreview(lead.id);
+      setPreview(p);
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e));
+    }
+  }, [lead.id, onError]);
+
+  useEffect(() => {
+    setEditing(Boolean(lead.customBody?.trim()));
+    setSubject(lead.customSubject ?? "");
+    setBody(lead.customBody ?? "");
+    void loadPreview();
+  }, [lead.id, lead.customBody, lead.customSubject, loadPreview]);
+
+  async function saveDraft() {
+    setBusy(true);
+    onError(null);
+    try {
+      const updated = await api.updateLead(lead.id, {
+        customSubject: subject.trim() || null,
+        customBody: body.trim() || null,
+      });
+      onLeadUpdated(updated);
+      setEditing(Boolean(updated.customBody?.trim()));
+      await loadPreview();
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function startFromGenerated() {
+    setBusy(true);
+    onError(null);
+    try {
+      const p = await api.getOutreachPreview(lead.id);
+      // Force generated body: temporarily need body without custom.
+      // Preview uses custom if set — clear first if needed.
+      let before = p.bodyBeforeFooter;
+      if (p.source === "custom") {
+        const cleared = await api.updateLead(lead.id, {
+          customSubject: null,
+          customBody: null,
+        });
+        onLeadUpdated(cleared);
+        const gen = await api.getOutreachPreview(lead.id);
+        before = gen.bodyBeforeFooter;
+        setSubject(gen.subject);
+      } else {
+        setSubject(p.subject);
+      }
+      setBody(before);
+      setEditing(true);
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function clearDraft() {
+    setBusy(true);
+    onError(null);
+    try {
+      const updated = await api.updateLead(lead.id, {
+        customSubject: null,
+        customBody: null,
+      });
+      onLeadUpdated(updated);
+      setSubject("");
+      setBody("");
+      setEditing(false);
+      await loadPreview();
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="panel" style={{ padding: "1.25rem", marginBottom: "1rem" }}>
+      <h2>Draft</h2>
+      <p className="muted">
+        Hand-written copy overrides the generated initial email. The system still appends the postal
+        address and unsubscribe footer on send.
+      </p>
+
+      {!editing && preview?.source === "generated" ? (
+        <>
+          <p className="meta" style={{ marginTop: "0.75rem" }}>
+            Showing <strong>generated</strong> copy (read-only)
+          </p>
+          <label>
+            Subject
+            <input value={preview.subject} readOnly />
+          </label>
+          <label style={{ display: "block", marginTop: "0.75rem" }}>
+            Body
+            <textarea rows={12} value={preview.bodyBeforeFooter} readOnly />
+          </label>
+          <div style={{ marginTop: "0.75rem" }}>
+            <button type="button" className="btn" disabled={busy} onClick={() => void startFromGenerated()}>
+              Edit as custom draft
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="meta" style={{ marginTop: "0.75rem" }}>
+            {hasCustom ? "Custom draft" : "Editing custom draft"}
+            {lead.draftUpdatedAt ? ` · updated ${lead.draftUpdatedAt.slice(0, 19)}` : ""}
+          </p>
+          <label>
+            Subject
+            <input
+              value={subject}
+              disabled={busy}
+              placeholder="Leave blank to use generated subject"
+              onChange={(e) => setSubject(e.target.value)}
+            />
+          </label>
+          <label style={{ display: "block", marginTop: "0.75rem" }}>
+            Body
+            <textarea
+              rows={12}
+              value={body}
+              disabled={busy}
+              placeholder="Hand-written email body (no footer — that is appended automatically)"
+              onChange={(e) => setBody(e.target.value)}
+            />
+          </label>
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.75rem" }}>
+            <button type="button" className="btn" disabled={busy} onClick={() => void saveDraft()}>
+              Save draft
+            </button>
+            {hasCustom && (
+              <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => void clearDraft()}>
+                Clear custom draft
+              </button>
+            )}
+          </div>
+        </>
+      )}
+
+      {preview && (
+        <div style={{ marginTop: "1.25rem" }}>
+          <h3 style={{ fontSize: "1rem", margin: "0 0 0.5rem" }}>Preview as sent</h3>
+          <p className="meta">
+            Subject: {preview.subject} · source: {preview.source}
+          </p>
+          <pre
+            className="audit-json"
+            style={{ whiteSpace: "pre-wrap", maxHeight: "280px", overflow: "auto" }}
+          >
+            {preview.text}
+          </pre>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function OutreachDetailPage() {
   const { id } = useParams();
   const leadId = Number(id);
@@ -218,6 +405,8 @@ export function OutreachDetailPage() {
           </ul>
         </div>
       )}
+
+      <DraftPanel lead={lead} onLeadUpdated={setLead} onError={setError} />
 
       <div className="detail-grid">
         <form className="panel form-grid" style={{ padding: "1.25rem" }} onSubmit={(e) => void save(e)}>

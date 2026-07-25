@@ -64,6 +64,63 @@ describe("pickObservation", () => {
     expect(r.signal).toBe("lcp_ms");
     expect(r.line).toContain("5 seconds");
   });
+
+  it("returns broken_form from audit.broken_form", () => {
+    const r = pickObservation({
+      websiteUrl: "https://saundersautocare.co.uk",
+      audit: {
+        https: true,
+        broken_form: {
+          name: "MOT reminder form",
+          fault: "asks for an expiry year, but the dropdown stops at 2020",
+        },
+        builder: "wordpress",
+      },
+    });
+    expect(r.signal).toBe("broken_form");
+    expect(r.line).toContain("MOT reminder form");
+    expect(r.line).toContain("saundersautocare.co.uk");
+    expect(r.line).toContain("dropdown stops at 2020");
+  });
+
+  it("returns cms_outdated from audit.cms_outdated", () => {
+    const r = pickObservation({
+      websiteUrl: "https://example.co.uk",
+      audit: {
+        https: true,
+        cms_outdated: { cms: "WordPress", version: "4.9.26", eol_year: 2018 },
+        builder: "wordpress",
+      },
+    });
+    expect(r.signal).toBe("cms_outdated");
+    expect(r.line).toContain("WordPress 4.9.26");
+    expect(r.line).toContain("2018");
+  });
+
+  it("prefers broken_links over broken_form and cms_outdated", () => {
+    const r = pickObservation({
+      websiteUrl: "https://guryel.co.uk",
+      audit: {
+        https: true,
+        broken_links: 3,
+        broken_link_page: "Contact Us",
+        broken_form: { name: "contact form", fault: "never submits" },
+        cms_outdated: { cms: "WordPress", version: "4.9", eol_year: 2018 },
+      },
+    });
+    expect(r.signal).toBe("broken_links");
+  });
+
+  it("builder line no longer claims stock template or shared use", () => {
+    const r = pickObservation({
+      websiteUrl: "https://saundersautocare.co.uk",
+      audit: { https: true, builder: "wordpress" },
+    });
+    expect(r.signal).toBe("builder");
+    expect(r.line.toLowerCase()).not.toContain("stock");
+    expect(r.line.toLowerCase()).not.toContain("a lot of firms");
+    expect(r.line).toContain("built on wordpress");
+  });
 });
 
 describe("pickSubjectVariant", () => {
