@@ -31,7 +31,8 @@ export async function sendResendEmail(opts: {
   from?: string;
   replyTo?: string;
   subject: string;
-  html: string;
+  /** Optional — omit for text-only outreach (better inbox placement). */
+  html?: string;
   text?: string;
   headers?: Record<string, string>;
 }): Promise<SendResult> {
@@ -47,15 +48,21 @@ export async function sendResendEmail(opts: {
     return { sent: false, reason: "No notify recipients configured (set in Settings)" };
   }
 
+  const html = opts.html?.trim();
+  const text = opts.text?.trim();
+  if (!html && !text) {
+    return { sent: false, reason: "Email body required (html or text)" };
+  }
+
   const payload: Record<string, unknown> = {
     from: opts.from || DEFAULT_FROM,
     to: recipients,
     subject: opts.subject,
-    html: opts.html,
     reply_to: opts.replyTo || DEFAULT_REPLY_TO,
   };
 
-  if (opts.text?.trim()) payload.text = opts.text;
+  if (html) payload.html = html;
+  if (text) payload.text = text;
   if (opts.headers && Object.keys(opts.headers).length > 0) {
     payload.headers = opts.headers;
   }

@@ -13,8 +13,14 @@ import {
   updateLead,
 } from "./outreach-db";
 import { canAutoSend } from "./outreach/canAutoSend";
+import {
+  absoluteFollowupAt,
+  renderOutreachCopy,
+  resolvePostalAddress,
+  resolveTemplateId,
+  type CopyLeadInput,
+} from "./outreach/copy";
 import { sendResendEmail } from "./email";
-import { escapeHtml } from "./email";
 
 async function sha256Hex(input: string): Promise<string> {
   const data = new TextEncoder().encode(input);
@@ -30,37 +36,21 @@ export async function makeIdempotencyKey(
   return sha256Hex(`${leadId}:${templateId}:${followupStep}`);
 }
 
-function renderOutreachEmail(lead: Lead, settings: OutreachSettings, step: number) {
-  const subject =
-    step === 0
-      ? `A fresh site idea for ${lead.businessName}`
-      : `Quick follow-up — ${lead.businessName}`;
-  const unsubHint = "You can unsubscribe using the link below.";
-  const postal = settings.postalAddress || "Postal address not configured";
-  const html = `
-    <div style="font-family:system-ui,sans-serif;color:#1a2332;max-width:560px;margin:0 auto">
-      <p>Hi${lead.contactName ? ` ${escapeHtml(lead.contactName)}` : ""},</p>
-      <p>I put together a quick demo for <strong>${escapeHtml(lead.businessName)}</strong>${
-        lead.scoreReason ? ` — ${escapeHtml(lead.scoreReason)}` : ""
-      }.</p>
-      ${
-        lead.demoUrl
-          ? `<p><a href="${escapeHtml(lead.demoUrl)}" style="color:#0f6e56">Preview the demo</a></p>`
-          : ""
-      }
-      <p>If useful, I build and launch a clean site for a flat £${Number(lead.offerAmount || 500)}.</p>
-      <hr style="border:none;border-top:1px solid #d5dde8;margin:24px 0" />
-      <p style="font-size:12px;color:#5a6578">
-        ${escapeHtml(postal)}<br/>
-        ${escapeHtml(unsubHint)}
-        · <a href="{{UNSUBSCRIBE_URL}}" style="color:#0f6e56">Unsubscribe</a>
-      </p>
-    </div>
-  `;
-  const text = `Hi${lead.contactName ? ` ${lead.contactName}` : ""},\n\nDemo for ${lead.businessName}${
-    lead.demoUrl ? `: ${lead.demoUrl}` : ""
-  }\n\nFlat £${lead.offerAmount || 500}.\n\n${postal}\nUnsubscribe: {{UNSUBSCRIBE_URL}}\n`;
-  return { subject, html, text };
+export { resolvePostalAddress };
+
+function toCopyLead(lead: Lead): CopyLeadInput {
+  return {
+    id: lead.id,
+    businessName: lead.businessName,
+    slug: lead.slug,
+    industry: lead.industry,
+    location: lead.location,
+    contactName: lead.contactName,
+    websiteUrl: lead.websiteUrl,
+    demoUrl: lead.demoUrl,
+    offerAmount: Number(lead.offerAmount || 500),
+    audit: lead.audit || {},
+  };
 }
 
 export async function signUnsubscribeToken(
@@ -93,8 +83,6 @@ export async function verifyUnsubscribeToken(
   const exp = Number(expStr);
   if (!Number.isInteger(leadId) || !email || !Number.isFinite(exp)) return null;
   if (Math.floor(Date.now() / 1000) > exp) return null;
-  const expected = await signUnsubscribeToken(secret, leadId, email);
-  // compare only signature portion by re-signing same payload
   const payload = `${leadId}.${email.toLowerCase()}.${exp}`;
   const key = await crypto.subtle.importKey(
     "raw",
@@ -106,7 +94,6 @@ export async function verifyUnsubscribeToken(
   const raw = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
   const hex = [...new Uint8Array(raw)].map((b) => b.toString(16).padStart(2, "0")).join("");
   if (hex !== sig) return null;
-  void expected;
   return { leadId, email: email.toLowerCase() };
 }
 
@@ -128,8 +115,15 @@ export async function sendLeadOutreach(opts: {
   templateId?: string;
 }): Promise<SendLeadResult> {
   const { sql, env, lead, settings, origin, force } = opts;
-  const templateId = opts.templateId ?? (lead.followupStep === 0 ? "initial" : `followup_${lead.followupStep}`);
+  const templateId = resolveTemplateId(lead.followupStep, opts.templateId);
   const todayCount = await countSentToday(sql);
+
+  const postal = resolvePostalAddress(settings, env);
+  if (!postal) {
+    const reasons = ["missing_postal_address"];
+    await setLeadReviewReasons(sql, lead.id, reasons);
+    return { sent: false, dryRun: settings.dryRun, deferred: false, reasons };
+  }
 
   let suppressedExtra = false;
   if (lead.contactEmail) suppressedExtra = await isSuppressed(sql, lead.contactEmail);
@@ -137,10 +131,13 @@ export async function sendLeadOutreach(opts: {
   const gateLead = leadGateInput(lead);
   if (suppressedExtra) gateLead.suppressed = true;
 
+  // Follow-ups/final are already past the initial status gate
+  if (templateId !== "initial") {
+    gateLead.status = "queued";
+  }
+
   const gate = canAutoSend(gateLead, settingsGateInput(settings), todayCount);
 
-  // Manual "Send now" / Approve can bypass auto_send_disabled + dry_run operational flags
-  // but never PECR / suppression / demo / email rules unless force is only for approve path.
   const reviewBlockers = gate.reasons.filter(
     (r) => !["auto_send_disabled", "sending_paused", "dry_run", "daily_cap_reached"].includes(r)
   );
@@ -154,7 +151,6 @@ export async function sendLeadOutreach(opts: {
     return { sent: false, dryRun: settings.dryRun, deferred: true, reasons: gate.reasons };
   }
 
-  // Still enforce hard PECR / suppression even when force (approve) — only skip auto_send/dry_run/cap deferrals
   if (force) {
     const hard = canAutoSend(
       gateLead,
@@ -188,9 +184,14 @@ export async function sendLeadOutreach(opts: {
   const secret = env.UNSUBSCRIBE_SIGNING_KEY || env.API_KEY;
   const token = await signUnsubscribeToken(secret, lead.id, lead.contactEmail);
   const unsubUrl = `${origin}/api/unsubscribe?token=${encodeURIComponent(token)}`;
-  const rendered = renderOutreachEmail(lead, settings, step);
-  const html = rendered.html.replaceAll("{{UNSUBSCRIBE_URL}}", unsubUrl);
-  const text = rendered.text.replaceAll("{{UNSUBSCRIBE_URL}}", unsubUrl);
+
+  const rendered = renderOutreachCopy({
+    lead: toCopyLead(lead),
+    postalAddress: postal,
+    unsubscribeUrl: unsubUrl,
+    templateId,
+  });
+  const text = rendered.text;
 
   const from =
     settings.fromAddress ||
@@ -199,7 +200,22 @@ export async function sendLeadOutreach(opts: {
   const replyTo = settings.replyTo || env.OUTREACH_REPLY_TO || undefined;
 
   const dryRun = force ? false : settings.dryRun;
+
+  async function persistAuditOnInitial() {
+    if (templateId !== "initial" || !rendered.variant) return;
+    const audit = {
+      ...lead.audit,
+      outreach: {
+        signal: rendered.signal,
+        subjectVariant: rendered.variant,
+        originalSubject: rendered.subject,
+      },
+    };
+    await updateLead(sql, lead.id, { audit });
+  }
+
   if (dryRun) {
+    await persistAuditOnInitial();
     const row = await insertLeadMessage(sql, {
       leadId: lead.id,
       direction: "out",
@@ -207,6 +223,7 @@ export async function sendLeadOutreach(opts: {
       subject: rendered.subject,
       body: text,
       templateId,
+      variant: rendered.variant,
       idempotencyKey,
       status: "queued",
     });
@@ -225,7 +242,6 @@ export async function sendLeadOutreach(opts: {
     from,
     replyTo,
     subject: rendered.subject,
-    html,
     text,
     headers: {
       "List-Unsubscribe": `<${unsubUrl}>`,
@@ -241,6 +257,7 @@ export async function sendLeadOutreach(opts: {
       subject: rendered.subject,
       body: text,
       templateId,
+      variant: rendered.variant,
       idempotencyKey,
       status: "failed",
       error: result.reason ?? "send_failed",
@@ -254,6 +271,8 @@ export async function sendLeadOutreach(opts: {
     };
   }
 
+  await persistAuditOnInitial();
+
   const row = await insertLeadMessage(sql, {
     leadId: lead.id,
     direction: "out",
@@ -261,6 +280,7 @@ export async function sendLeadOutreach(opts: {
     subject: rendered.subject,
     body: text,
     templateId,
+    variant: rendered.variant,
     idempotencyKey,
     status: "sent",
     sentAt: new Date().toISOString(),
@@ -268,31 +288,41 @@ export async function sendLeadOutreach(opts: {
 
   const offsets = settings.followupOffsetsDays.length ? settings.followupOffsetsDays : [3, 7];
   const nextStep = step + 1;
-  const nextOffset = offsets[step];
-  const nextFollowup =
-    nextOffset != null
-      ? new Date(Date.now() + nextOffset * 24 * 60 * 60 * 1000).toISOString()
-      : null;
+  const sentAtIso = lead.sentAt || new Date().toISOString();
+  const isFinal = templateId === "final";
+
+  let nextFollowup: string | null = null;
+  let status: string;
+  if (isFinal) {
+    status = "lost";
+    nextFollowup = null;
+  } else {
+    // Absolute days since initial send: offsets[0]=3 → followup, offsets[1]=7 → final
+    const absoluteDay = offsets[step];
+    nextFollowup =
+      absoluteDay != null ? absoluteFollowupAt(sentAtIso, absoluteDay) : null;
+    status = step === 0 ? "sent" : "followed_up";
+  }
 
   await opts.sql`
     UPDATE leads SET
-      status = ${step === 0 ? "sent" : "followed_up"},
+      status = ${status},
       sent_at = COALESCE(sent_at, now()),
       last_touch_at = now(),
-      followup_step = ${nextStep},
+      followup_step = ${isFinal ? nextStep : nextStep},
       next_followup_at = ${nextFollowup},
       review_reasons = '{}',
       updated_at = now()
     WHERE id = ${lead.id}
   `;
 
-  if (nextFollowup) {
+  if (nextFollowup && !isFinal) {
     const due = nextFollowup.slice(0, 10);
     await createLeadReminder(
       sql,
       lead.id,
       due,
-      `Outreach follow-up step ${nextStep} for ${lead.businessName}`
+      `Outreach ${nextStep === 1 ? "follow-up" : "final"} for ${lead.businessName}`
     );
   }
 
@@ -304,4 +334,3 @@ export async function sendLeadOutreach(opts: {
     messageId: Number(row.id),
   };
 }
-

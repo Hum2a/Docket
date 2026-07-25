@@ -112,6 +112,16 @@ Additive schema in `migrations/003_outreach_schema.sql` (`leads`, `lead_notes`, 
 
 Autosend is gated by `canAutoSend` (PECR corporate-subscriber rule, verified non-freemail, demo ready, daily cap, etc.). Dry run queues `lead_messages` without calling Resend. Outreach From is `OUTREACH_FROM` / settings — never the job digest sender.
 
+Follow-up offsets `{3,7}` are **absolute days since the initial send** (day 3 = follow-up, day 7 = final). After the final email the lead is marked `lost` and never contacted again. Copy is plain text only (no HTML); observation lines come from `audit` signals, not an LLM. A real `postal_address` (settings or `OUTREACH_POSTAL_ADDRESS`) is required before any send.
+
+### Before the first real send
+
+- Sending domain live with SPF, DKIM and DMARC; warm ~2 weeks
+- Cap at 10–20 sends/day until reply data exists (`daily_send_cap`)
+- Turn **open tracking off** in the Resend dashboard for the outreach domain (pixels hurt deliverability; reply rate is the metric)
+- Populate postal address, then send yourself the full initial → +3 → +7 sequence and read it on a phone
+- Confirm the demo renders on mobile — the email tells them to open it there
+
 ### Crons (`wrangler.toml`)
 
 | Cron | Job |

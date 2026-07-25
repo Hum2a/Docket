@@ -36,6 +36,8 @@ import {
 import { sendLeadOutreach, verifyUnsubscribeToken } from "./outreach-send";
 import { resolveNotifyRecipients } from "./db";
 import { DEFAULT_FROM, sendResendEmail } from "./email";
+import { bareDomain } from "./outreach/copy";
+import { emailDomain } from "./outreach/canAutoSend";
 
 type AppContext = { Bindings: Env };
 
@@ -340,13 +342,17 @@ outreachApp.post("/api/outreach/sequence", requireApiKey, async (c) => {
 
   const results = [];
   for (const lead of due) {
-    const offsets = settings.followupOffsetsDays;
+    const offsets = settings.followupOffsetsDays.length
+      ? settings.followupOffsetsDays
+      : [3, 7];
+    // followupStep 1 → first FU, 2 → final; past that → lost
     if (lead.followupStep > offsets.length) {
       await updateLead(sql, lead.id, { status: "lost" });
       await sql`UPDATE leads SET next_followup_at = NULL WHERE id = ${lead.id}`;
       results.push({ id: lead.id, status: "lost" });
       continue;
     }
+    const templateId = lead.followupStep >= offsets.length ? "final" : "followup";
     const r = await sendLeadOutreach({
       sql,
       env: c.env,
@@ -354,16 +360,8 @@ outreachApp.post("/api/outreach/sequence", requireApiKey, async (c) => {
       settings,
       origin,
       force: false,
-      templateId: `followup_${lead.followupStep}`,
+      templateId,
     });
-    if (!r.sent && !r.dryRun) {
-      // if no more offsets after this attempt path handled in send
-    }
-    const refreshed = await getLeadById(sql, lead.id);
-    if (refreshed && refreshed.followupStep > offsets.length) {
-      await updateLead(sql, lead.id, { status: "lost" });
-      await sql`UPDATE leads SET next_followup_at = NULL WHERE id = ${lead.id}`;
-    }
     results.push({ id: lead.id, ...r });
   }
   return c.json({ processed: results.length, results });
@@ -472,9 +470,21 @@ outreachApp.post("/api/webhooks/inbound", async (c) => {
 
   if (sentiment === "unsubscribe") {
     await addSuppression(sql, from, "email", "inbound_unsubscribe");
+    const domain = bareDomain(lead.websiteUrl) || emailDomain(from);
+    if (domain) await addSuppression(sql, domain, "domain", "inbound_unsubscribe");
     await sql`
       UPDATE leads SET status = 'unsubscribed', suppressed = true,
         suppression_reason = 'inbound_unsubscribe', replied_at = now(),
+        reply_sentiment = ${sentiment}, next_followup_at = NULL, updated_at = now()
+      WHERE id = ${lead.id}
+    `;
+  } else if (sentiment === "negative") {
+    await addSuppression(sql, from, "email", "negative_reply");
+    const domain = bareDomain(lead.websiteUrl) || emailDomain(from);
+    if (domain) await addSuppression(sql, domain, "domain", "negative_reply");
+    await sql`
+      UPDATE leads SET status = 'not_interested', suppressed = true,
+        suppression_reason = 'negative_reply', replied_at = now(),
         reply_sentiment = ${sentiment}, next_followup_at = NULL, updated_at = now()
       WHERE id = ${lead.id}
     `;
@@ -527,12 +537,15 @@ export async function runOutreachSequence(env: Env, origin: string) {
       new Date(l.nextFollowupAt) <= new Date()
   );
   for (const lead of due) {
-    const offsets = settings.followupOffsetsDays;
+    const offsets = settings.followupOffsetsDays.length
+      ? settings.followupOffsetsDays
+      : [3, 7];
     if (lead.followupStep > offsets.length) {
       await updateLead(sql, lead.id, { status: "lost" });
       await sql`UPDATE leads SET next_followup_at = NULL WHERE id = ${lead.id}`;
       continue;
     }
+    const templateId = lead.followupStep >= offsets.length ? "final" : "followup";
     await sendLeadOutreach({
       sql,
       env,
@@ -540,7 +553,7 @@ export async function runOutreachSequence(env: Env, origin: string) {
       settings,
       origin,
       force: false,
-      templateId: `followup_${lead.followupStep}`,
+      templateId,
     });
   }
 }
