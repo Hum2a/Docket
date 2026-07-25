@@ -4,6 +4,11 @@ import type { CreateLead, Lead, LeadStatus, OutreachSettings, UpdateLead } from 
 import { demoExpiresAtFrom, slugifyName } from "../shared/outreach";
 import { normalizeBusinessKey, planBulkUpserts } from "./outreach/bulkUpsert";
 import { canAutoSend } from "./outreach/canAutoSend";
+import {
+  clampLeadLimit,
+  decodeLeadCursor,
+  encodeLeadCursor,
+} from "./outreach/leadCursor";
 
 type LeadRow = Record<string, unknown>;
 
@@ -148,7 +153,7 @@ export async function listLeads(
   const limit = Math.min(opts.limit ?? 500, 1000);
   const rows = (await sql`
     SELECT * FROM leads
-    ORDER BY priority_score DESC NULLS LAST, updated_at DESC
+    ORDER BY priority_score DESC NULLS LAST, id DESC
     LIMIT ${limit}
   `) as LeadRow[];
 
@@ -164,6 +169,98 @@ export async function listLeads(
   if (opts.sort === "status") leads.sort((a, b) => a.status.localeCompare(b.status));
 
   return leads;
+}
+
+export type LeadsPage = {
+  leads: Lead[];
+  nextCursor: string | null;
+  total: number;
+};
+
+/**
+ * Keyset page for GET /api/leads.
+ * Filters applied in SQL; cursor is (priority_score DESC NULLS LAST, id DESC).
+ */
+export async function listLeadsPage(
+  sql: Sql,
+  opts: {
+    status?: string;
+    industry?: string;
+    minPriority?: number;
+    corporateOnly?: boolean;
+    limit?: number;
+    cursor?: string | null;
+  } = {}
+): Promise<LeadsPage> {
+  const limit = clampLeadLimit(opts.limit);
+  const cursor = decodeLeadCursor(opts.cursor ?? null);
+  const status = opts.status?.trim() || null;
+  const industry = opts.industry?.trim() || null;
+  const minPriority = opts.minPriority ?? null;
+  const corporateOnly = Boolean(opts.corporateOnly);
+
+  const countRows = (await sql`
+    SELECT COUNT(*)::int AS n FROM leads
+    WHERE (${status}::text IS NULL OR status = ${status})
+      AND (${industry}::text IS NULL OR industry = ${industry})
+      AND (${minPriority}::float8 IS NULL OR priority_score >= ${minPriority})
+      AND (${corporateOnly} = false OR corporate_subscriber = true)
+  `) as { n: number }[];
+  const total = Number(countRows[0]?.n ?? 0);
+
+  let rows: LeadRow[];
+  if (!cursor) {
+    rows = (await sql`
+      SELECT * FROM leads
+      WHERE (${status}::text IS NULL OR status = ${status})
+        AND (${industry}::text IS NULL OR industry = ${industry})
+        AND (${minPriority}::float8 IS NULL OR priority_score >= ${minPriority})
+        AND (${corporateOnly} = false OR corporate_subscriber = true)
+      ORDER BY priority_score DESC NULLS LAST, id DESC
+      LIMIT ${limit}
+    `) as LeadRow[];
+  } else if (cursor.p != null) {
+    const score = cursor.p;
+    const id = cursor.i;
+    rows = (await sql`
+      SELECT * FROM leads
+      WHERE (${status}::text IS NULL OR status = ${status})
+        AND (${industry}::text IS NULL OR industry = ${industry})
+        AND (${minPriority}::float8 IS NULL OR priority_score >= ${minPriority})
+        AND (${corporateOnly} = false OR corporate_subscriber = true)
+        AND (
+          priority_score < ${score}
+          OR (priority_score = ${score} AND id < ${id})
+          OR priority_score IS NULL
+        )
+      ORDER BY priority_score DESC NULLS LAST, id DESC
+      LIMIT ${limit}
+    `) as LeadRow[];
+  } else {
+    const id = cursor.i;
+    rows = (await sql`
+      SELECT * FROM leads
+      WHERE (${status}::text IS NULL OR status = ${status})
+        AND (${industry}::text IS NULL OR industry = ${industry})
+        AND (${minPriority}::float8 IS NULL OR priority_score >= ${minPriority})
+        AND (${corporateOnly} = false OR corporate_subscriber = true)
+        AND priority_score IS NULL
+        AND id < ${id}
+      ORDER BY priority_score DESC NULLS LAST, id DESC
+      LIMIT ${limit}
+    `) as LeadRow[];
+  }
+
+  const leads = rows.map(mapLead);
+  const nextCursor =
+    leads.length === limit
+      ? encodeLeadCursor({
+          p: leads[leads.length - 1]!.priorityScore,
+          i: leads[leads.length - 1]!.id,
+        })
+      : null;
+
+  return { leads, nextCursor, total };
 }
 
 export async function getLeadById(sql: Sql, id: number): Promise<Lead | null> {

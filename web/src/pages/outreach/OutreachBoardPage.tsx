@@ -14,25 +14,36 @@ import {
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import type { Lead, LeadStatus } from "@shared/outreach";
-import { LEAD_STATUSES, slugifyName } from "@shared/outreach";
+import { slugifyName } from "@shared/outreach";
 import { api } from "../../lib/api";
 import { Modal } from "../../components/Modal";
 import { LeadStatusSelect } from "../../components/LeadStatusSelect";
 import { outreachStatusLabel } from "../../lib/mode";
 
-const BOARD_STATUSES: LeadStatus[] = [
-  "sourced",
-  "qualified",
-  "audited",
+/** Visible board columns (canonical drop status). */
+const BOARD_COLUMNS: LeadStatus[] = [
   "scored",
   "queued",
   "demo_ready",
   "sent",
-  "followed_up",
   "replied",
-  "interested",
   "won",
+  "lost",
 ];
+
+const PIPELINE_STATUSES: LeadStatus[] = ["sourced", "qualified", "audited"];
+
+const BADGE_STATUSES: LeadStatus[] = ["interested", "not_interested", "unsubscribed", "followed_up"];
+
+function boardBucket(status: LeadStatus): LeadStatus | "pipeline" | null {
+  if (PIPELINE_STATUSES.includes(status)) return "pipeline";
+  if (status === "followed_up") return "sent";
+  if (status === "interested" || status === "not_interested" || status === "unsubscribed") {
+    return "replied";
+  }
+  if (BOARD_COLUMNS.includes(status)) return status;
+  return null;
+}
 
 function Card({
   lead,
@@ -63,6 +74,9 @@ function Card({
       <p className="meta">{lead.location || lead.postcode || ""}</p>
       {lead.priorityScore != null && (
         <p className="meta">Priority {lead.priorityScore.toFixed(1)}</p>
+      )}
+      {BADGE_STATUSES.includes(lead.status) && (
+        <span className="badge badge-status">{outreachStatusLabel(lead.status)}</span>
       )}
       <LeadStatusSelect
         value={lead.status}
@@ -158,7 +172,8 @@ export function OutreachBoardPage() {
     setLoading(true);
     setError(null);
     try {
-      setLeads(await api.listLeads());
+      const page = await api.listLeads({ limit: "200" });
+      setLeads(page.leads);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -170,14 +185,19 @@ export function OutreachBoardPage() {
     void load();
   }, [load]);
 
-  const byStatus = useMemo(() => {
-    const map = Object.fromEntries(LEAD_STATUSES.map((s) => [s, [] as Lead[]])) as Record<
+  const pipelineCount = useMemo(
+    () => leads.filter((l) => PIPELINE_STATUSES.includes(l.status)).length,
+    [leads]
+  );
+
+  const byColumn = useMemo(() => {
+    const map = Object.fromEntries(BOARD_COLUMNS.map((s) => [s, [] as Lead[]])) as Record<
       LeadStatus,
       Lead[]
     >;
     for (const l of leads) {
-      if (map[l.status]) map[l.status].push(l);
-      else map.sourced.push(l);
+      const bucket = boardBucket(l.status);
+      if (bucket && bucket !== "pipeline" && map[bucket]) map[bucket].push(l);
     }
     return map;
   }, [leads]);
@@ -222,7 +242,7 @@ export function OutreachBoardPage() {
     const overId = e.over?.id;
     if (!overId) return;
     const status = String(overId) as LeadStatus;
-    if (!LEAD_STATUSES.includes(status)) return;
+    if (!BOARD_COLUMNS.includes(status)) return;
     const id = Number(e.active.id);
     await onStatusChange(id, status);
   }
@@ -259,6 +279,13 @@ export function OutreachBoardPage() {
         </button>
       </div>
 
+      {!loading && (
+        <p className="muted pipeline-counter">
+          <Link to="/outreach/list?pipeline=1">In pipeline ({pipelineCount})</Link>
+          <span> — sourced, qualified, audited</span>
+        </p>
+      )}
+
       {error && <div className="error-banner">{error}</div>}
       {loading ? (
         <p className="muted">Loading leads…</p>
@@ -270,11 +297,11 @@ export function OutreachBoardPage() {
           onDragEnd={(e) => void onDragEnd(e)}
         >
           <div className="board board-wide">
-            {BOARD_STATUSES.map((status) => (
+            {BOARD_COLUMNS.map((status) => (
               <Column
                 key={status}
                 status={status}
-                leads={byStatus[status]}
+                leads={byColumn[status]}
                 busyId={busyId}
                 onDelete={onDelete}
                 onStatusChange={onStatusChange}

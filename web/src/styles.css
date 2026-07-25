@@ -243,6 +243,22 @@ textarea {
   color: var(--warn);
 }
 
+.badge-status {
+  background: var(--surface-2, rgba(0, 0, 0, 0.06));
+  color: var(--muted);
+  margin-bottom: 0.35rem;
+}
+
+.pipeline-counter {
+  margin: -0.25rem 0 1rem;
+}
+
+.pipeline-counter a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .page-enter {
   animation: fadeUp 380ms var(--ease) both;
 }

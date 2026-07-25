@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import type { Lead, LeadStatus } from "@shared/outreach";
 import { LEAD_STATUSES } from "@shared/outreach";
 import { api } from "../../lib/api";
@@ -15,8 +15,16 @@ type SortKey =
   | "nextFollowupAt"
   | "updatedAt";
 
+const PIPELINE_STATUSES: LeadStatus[] = ["sourced", "qualified", "audited"];
+
 export function OutreachListPage() {
+  const [searchParams] = useSearchParams();
+  const pipelineMode = searchParams.get("pipeline") === "1";
+
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [total, setTotal] = useState(0);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
@@ -29,15 +37,40 @@ export function OutreachListPage() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      setLeads(await api.listLeads());
+      const params: Record<string, string> = { limit: "50" };
+      if (status) params.status = status;
+      if (industry) params.industry = industry;
+      const page = await api.listLeads(params);
+      setLeads(page.leads);
+      setNextCursor(page.nextCursor);
+      setTotal(page.total);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, []);
+  }, [status, industry]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function loadMore() {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const params: Record<string, string> = { limit: "50", cursor: nextCursor };
+      if (status) params.status = status;
+      if (industry) params.industry = industry;
+      const page = await api.listLeads(params);
+      setLeads((prev) => [...prev, ...page.leads]);
+      setNextCursor(page.nextCursor);
+      setTotal(page.total);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   const industries = useMemo(
     () => [...new Set(leads.map((a) => a.industry).filter(Boolean) as string[])].sort(),
@@ -47,6 +80,7 @@ export function OutreachListPage() {
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
     let list = leads.filter((r) => {
+      if (pipelineMode && !PIPELINE_STATUSES.includes(r.status)) return false;
       if (status && r.status !== status) return false;
       if (industry && r.industry !== industry) return false;
       if (query) {
@@ -77,7 +111,7 @@ export function OutreachListPage() {
       return 0;
     });
     return list;
-  }, [leads, q, status, industry, sortKey, sortDir]);
+  }, [leads, q, status, industry, sortKey, sortDir, pipelineMode]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) setSortDir((d) => (d === 1 ? -1 : 1));
@@ -93,6 +127,7 @@ export function OutreachListPage() {
     try {
       await api.deleteLead(id);
       setLeads((a) => a.filter((x) => x.id !== id));
+      setTotal((t) => Math.max(0, t - 1));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -128,7 +163,11 @@ export function OutreachListPage() {
       <div className="page-head">
         <h1>Leads</h1>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-          <span className="muted">{filtered.length} shown</span>
+          <span className="muted">
+            {filtered.length} shown
+            {total > 0 ? ` · ${total} total` : ""}
+            {pipelineMode ? " · pipeline" : ""}
+          </span>
           <a className="btn btn-ghost" href={api.exportLeadsCsvUrl()}>
             Export CSV
           </a>
@@ -208,6 +247,18 @@ export function OutreachListPage() {
           </tbody>
         </table>
         {filtered.length === 0 && <p className="muted empty-pad">No leads match.</p>}
+        {nextCursor && (
+          <div className="empty-pad" style={{ textAlign: "center" }}>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled={loadingMore}
+              onClick={() => void loadMore()}
+            >
+              {loadingMore ? "Loading…" : "Load more"}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -16,9 +16,9 @@ export function OutreachQueuePage() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const all = await api.listLeads();
+      const page = await api.listLeads({ limit: "200" });
       setLeads(
-        all
+        page.leads
           .filter(
             (l) =>
               l.reviewReasons.length > 0 ||

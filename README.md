@@ -149,7 +149,8 @@ Follow-up offsets `{3,7}` are **absolute days since the initial send** (day 3 = 
 | GET/PATCH | `/api/settings` | write: key |
 | POST | `/api/digest/run` | key |
 | POST | `/api/email/test` | key |
-| GET/POST | `/api/leads` | write: key |
+| GET | `/api/leads` | —; paginated `{ leads, nextCursor, total }`; query: `limit` (1–200, default 50), `cursor`, `status`, `industry`, `min_priority` / `minPriority`, `corporate_only` / `corporate` |
+| POST | `/api/leads` | key |
 | POST | `/api/leads/bulk` | key |
 | GET | `/api/leads/stats` | — |
 | GET/PATCH/DELETE | `/api/leads/:id` | write: key |

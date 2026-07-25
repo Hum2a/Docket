@@ -29,6 +29,7 @@ import {
   listLeadNotes,
   listLeadReminders,
   listLeads,
+  listLeadsPage,
   setLeadReminderCompleted,
   updateLead,
   updateOutreachSettings,
@@ -54,15 +55,20 @@ export const outreachApp = new Hono<AppContext>();
 
 outreachApp.get("/api/leads", async (c) => {
   const sql = getSql(c.env.DATABASE_URL);
-  const leads = await listLeads(sql, {
+  const corporate =
+    c.req.query("corporate_only") === "true" ||
+    c.req.query("corporate_only") === "1" ||
+    c.req.query("corporate") === "1" ||
+    c.req.query("corporate") === "true";
+  const page = await listLeadsPage(sql, {
     status: c.req.query("status") || undefined,
     industry: c.req.query("industry") || undefined,
     minPriority: c.req.query("min_priority") ? Number(c.req.query("min_priority")) : undefined,
-    corporateOnly: c.req.query("corporate") === "1" || c.req.query("corporate") === "true",
-    sort: c.req.query("sort") || undefined,
-    limit: c.req.query("limit") ? Number(c.req.query("limit")) : 500,
+    corporateOnly: corporate,
+    limit: c.req.query("limit") ? Number(c.req.query("limit")) : 50,
+    cursor: c.req.query("cursor") || undefined,
   });
-  return c.json(leads);
+  return c.json(page);
 });
 
 outreachApp.get("/api/leads/stats", async (c) => {

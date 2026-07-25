@@ -199,7 +199,7 @@ export const api = {
 
   listLeads: (params?: Record<string, string>) => {
     const qs = params ? "?" + new URLSearchParams(params).toString() : "";
-    return request<Lead[]>(`/api/leads${qs}`);
+    return request<{ leads: Lead[]; nextCursor: string | null; total: number }>(`/api/leads${qs}`);
   },
   getLead: (id: number) => request<Lead>(`/api/leads/${id}`),
   createLead: (body: CreateLead) =>
