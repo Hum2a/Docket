@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Document, DocumentType } from "@shared/schema";
-import { api } from "../lib/api";
+import { api, clearApiKey, getApiKey, setApiKey } from "../lib/api";
 
 export function SettingsPage() {
   const [docs, setDocs] = useState<Document[]>([]);
@@ -16,6 +16,8 @@ export function SettingsPage() {
   const [fromAddress, setFromAddress] = useState("Docket <Docket@Humza-Butt.space>");
   const [effectiveNotifyTo, setEffectiveNotifyTo] = useState<string[]>([]);
   const [message, setMessage] = useState<string | null>(null);
+  const [apiKeyDraft, setApiKeyDraft] = useState("");
+  const [hasStoredKey, setHasStoredKey] = useState(() => Boolean(getApiKey()));
 
   const load = useCallback(async () => {
     setError(null);
@@ -220,6 +222,72 @@ export function SettingsPage() {
               >
                 {importing ? "Importing…" : "Import"}
               </button>
+            </form>
+          </section>
+
+          <section className="panel section">
+            <h2>API key</h2>
+            <p className="muted">
+              Outreach data (leads, messages, exports) requires the Docket API key. It is stored
+              only in this browser&apos;s localStorage and sent as an <code>X-Api-Key</code> header —
+              never in the URL.
+            </p>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const trimmed = apiKeyDraft.trim();
+                if (!trimmed) {
+                  clearApiKey();
+                  setApiKeyDraft("");
+                  setHasStoredKey(false);
+                  setMessage("API key cleared.");
+                  return;
+                }
+                setApiKey(trimmed);
+                setApiKeyDraft("");
+                setHasStoredKey(true);
+                setMessage("API key saved in this browser.");
+              }}
+              style={{ marginTop: "0.75rem" }}
+            >
+              <div className="field">
+                <label htmlFor="apiKey">
+                  {hasStoredKey ? "Replace API key" : "Enter API key"}
+                </label>
+                <input
+                  id="apiKey"
+                  type="password"
+                  autoComplete="off"
+                  value={apiKeyDraft}
+                  onChange={(e) => setApiKeyDraft(e.target.value)}
+                  placeholder={hasStoredKey ? "•••••••• (saved)" : "Paste API key"}
+                  style={{ width: "100%", maxWidth: 420 }}
+                />
+                <span className="muted">
+                  {hasStoredKey
+                    ? "A key is saved for this browser."
+                    : "No key saved — board and list will ask you to enter one."}
+                </span>
+              </div>
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.6rem", flexWrap: "wrap" }}>
+                <button type="submit" className="btn btn-primary">
+                  {apiKeyDraft.trim() ? "Save API key" : hasStoredKey ? "Clear API key" : "Save API key"}
+                </button>
+                {hasStoredKey && (
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => {
+                      clearApiKey();
+                      setApiKeyDraft("");
+                      setHasStoredKey(false);
+                      setMessage("API key cleared.");
+                    }}
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
             </form>
           </section>
 

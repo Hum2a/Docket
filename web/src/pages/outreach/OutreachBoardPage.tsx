@@ -296,7 +296,17 @@ export function OutreachBoardPage() {
         </p>
       )}
 
-      {error && <div className="error-banner">{error}</div>}
+      {error && (
+        <div className="error-banner">
+          {error}
+          {/API key/i.test(error) ? (
+            <>
+              {" "}
+              <Link to="/settings">Open Settings</Link>
+            </>
+          ) : null}
+        </div>
+      )}
       {loading ? (
         <p className="muted">Loading leads…</p>
       ) : (

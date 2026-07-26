@@ -174,13 +174,31 @@ export function OutreachListPage() {
             {total > 0 ? ` · ${total} total` : ""}
             {pipelineMode ? " · pipeline" : ""}
           </span>
-          <a className="btn btn-ghost" href={api.exportLeadsCsvUrl()}>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => {
+              void api.exportLeadsCsv().catch((err) => {
+                setError(err instanceof Error ? err.message : String(err));
+              });
+            }}
+          >
             Export CSV
-          </a>
+          </button>
         </div>
       </div>
 
-      {error && <div className="error-banner">{error}</div>}
+      {error && (
+        <div className="error-banner">
+          {error}
+          {/API key/i.test(error) ? (
+            <>
+              {" "}
+              <Link to="/settings">Open Settings</Link>
+            </>
+          ) : null}
+        </div>
+      )}
 
       <div className="toolbar">
         <input

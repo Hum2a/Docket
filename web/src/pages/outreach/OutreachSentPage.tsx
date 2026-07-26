@@ -175,9 +175,17 @@ export function OutreachSentPage() {
           </label>
         </div>
         <div style={{ marginTop: "0.75rem" }}>
-          <a className="btn btn-ghost" href={api.exportOutreachMessagesCsvUrl(filterParams)}>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => {
+              void api.exportOutreachMessagesCsv(filterParams).catch((err) => {
+                setError(err instanceof Error ? err.message : String(err));
+              });
+            }}
+          >
             Export CSV
-          </a>
+          </button>
         </div>
       </div>
 

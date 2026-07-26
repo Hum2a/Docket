@@ -60,7 +60,7 @@ async function requireApiKey(c: Context<AppContext>, next: Next) {
 
 export const outreachApp = new Hono<AppContext>();
 
-outreachApp.get("/api/leads", async (c) => {
+outreachApp.get("/api/leads", requireApiKey, async (c) => {
   const sql = getSql(c.env.DATABASE_URL);
   const corporate =
     c.req.query("corporate_only") === "true" ||
@@ -78,12 +78,12 @@ outreachApp.get("/api/leads", async (c) => {
   return c.json(page);
 });
 
-outreachApp.get("/api/leads/stats", async (c) => {
+outreachApp.get("/api/leads/stats", requireApiKey, async (c) => {
   const sql = getSql(c.env.DATABASE_URL);
   return c.json(await getLeadStats(sql));
 });
 
-outreachApp.get("/api/leads/:id", async (c) => {
+outreachApp.get("/api/leads/:id", requireApiKey, async (c) => {
   const id = Number(c.req.param("id"));
   if (!Number.isInteger(id)) return c.json({ error: "id must be an integer" }, 400);
   const sql = getSql(c.env.DATABASE_URL);
@@ -229,7 +229,7 @@ outreachApp.delete("/api/leads/:id", requireApiKey, async (c) => {
   return c.json({ ok: true });
 });
 
-outreachApp.get("/api/leads/:id/notes", async (c) => {
+outreachApp.get("/api/leads/:id/notes", requireApiKey, async (c) => {
   const id = Number(c.req.param("id"));
   const sql = getSql(c.env.DATABASE_URL);
   return c.json(await listLeadNotes(sql, id));
@@ -251,7 +251,7 @@ outreachApp.delete("/api/lead-notes/:id", requireApiKey, async (c) => {
   return c.json({ ok: true });
 });
 
-outreachApp.get("/api/leads/:id/reminders", async (c) => {
+outreachApp.get("/api/leads/:id/reminders", requireApiKey, async (c) => {
   const id = Number(c.req.param("id"));
   const sql = getSql(c.env.DATABASE_URL);
   return c.json(await listLeadReminders(sql, id));
@@ -283,7 +283,7 @@ outreachApp.delete("/api/lead-reminders/:id", requireApiKey, async (c) => {
   return c.json({ ok: true });
 });
 
-outreachApp.get("/api/leads/:id/messages", async (c) => {
+outreachApp.get("/api/leads/:id/messages", requireApiKey, async (c) => {
   const id = Number(c.req.param("id"));
   const sql = getSql(c.env.DATABASE_URL);
   return c.json(await listLeadMessages(sql, id));
@@ -376,7 +376,7 @@ outreachApp.post("/api/leads/:id/approve", requireApiKey, async (c) => {
   return c.json({ approved: true, ...result });
 });
 
-outreachApp.get("/api/outreach/settings", async (c) => {
+outreachApp.get("/api/outreach/settings", requireApiKey, async (c) => {
   const sql = getSql(c.env.DATABASE_URL);
   const settings = await getOutreachSettings(sql);
   const sentToday = await countSentToday(sql);
@@ -389,7 +389,7 @@ outreachApp.get("/api/outreach/preflight", async (c) => {
   return c.json(buildOutreachPreflight(settings, c.env));
 });
 
-outreachApp.get("/api/outreach/messages", async (c) => {
+outreachApp.get("/api/outreach/messages", requireApiKey, async (c) => {
   const sql = getSql(c.env.DATABASE_URL);
   const leadIdRaw = c.req.query("leadId") || c.req.query("lead_id");
   const page = await listOutreachMessagesPage(sql, {
@@ -408,7 +408,7 @@ outreachApp.get("/api/outreach/messages", async (c) => {
   return c.json(page);
 });
 
-outreachApp.get("/api/outreach/messages.csv", async (c) => {
+outreachApp.get("/api/outreach/messages.csv", requireApiKey, async (c) => {
   const sql = getSql(c.env.DATABASE_URL);
   const leadIdRaw = c.req.query("leadId") || c.req.query("lead_id");
   const filters = {
@@ -479,7 +479,7 @@ outreachApp.get("/api/outreach/messages.csv", async (c) => {
   });
 });
 
-outreachApp.get("/api/outreach/messages/:id", async (c) => {
+outreachApp.get("/api/outreach/messages/:id", requireApiKey, async (c) => {
   const id = Number(c.req.param("id"));
   if (!Number.isInteger(id)) return c.json({ error: "id must be an integer" }, 400);
   const sql = getSql(c.env.DATABASE_URL);
@@ -488,7 +488,7 @@ outreachApp.get("/api/outreach/messages/:id", async (c) => {
   return c.json(msg);
 });
 
-outreachApp.get("/api/outreach/analytics", async (c) => {
+outreachApp.get("/api/outreach/analytics", requireApiKey, async (c) => {
   const sql = getSql(c.env.DATABASE_URL);
   return c.json(await getOutreachAnalytics(sql));
 });
@@ -522,7 +522,7 @@ outreachApp.patch("/api/outreach/settings", requireApiKey, async (c) => {
   return c.json({ ...settings, sentToday });
 });
 
-outreachApp.get("/api/outreach/export.csv", async (c) => {
+outreachApp.get("/api/outreach/export.csv", requireApiKey, async (c) => {
   const sql = getSql(c.env.DATABASE_URL);
   const leads = await listLeads(sql, {
     status: c.req.query("status") || undefined,

@@ -104,16 +104,27 @@ export type OutreachPreflight = {
 
 const KEY_STORAGE = "docket_api_key";
 
-export function getApiKey(): string | null {
-  let key = localStorage.getItem(KEY_STORAGE);
-  if (!key) {
-    key = window.prompt("Enter the Docket API key (saved in this browser):");
-    if (key) localStorage.setItem(KEY_STORAGE, key);
+export class ApiAuthError extends Error {
+  constructor(message = "Enter your API key in Settings to load outreach data.") {
+    super(message);
+    this.name = "ApiAuthError";
   }
-  return key;
 }
 
-export function clearApiKey() {
+/** Read the stored key — never logs it, never puts it in a URL. */
+export function getApiKey(): string | null {
+  try {
+    return localStorage.getItem(KEY_STORAGE);
+  } catch {
+    return null;
+  }
+}
+
+export function setApiKey(key: string): void {
+  localStorage.setItem(KEY_STORAGE, key.trim());
+}
+
+export function clearApiKey(): void {
   localStorage.removeItem(KEY_STORAGE);
 }
 
@@ -124,7 +135,7 @@ async function request<T>(
   const headers = new Headers(opts.headers);
   if (opts.auth) {
     const key = getApiKey();
-    if (!key) throw new Error("API key required");
+    if (!key) throw new ApiAuthError();
     headers.set("X-Api-Key", key);
   }
   if (opts.body && !(opts.body instanceof FormData) && !headers.has("Content-Type")) {
@@ -134,7 +145,7 @@ async function request<T>(
   const res = await fetch(path, { ...opts, headers });
   if (res.status === 401 && opts.auth) {
     clearApiKey();
-    throw new Error("Invalid API key");
+    throw new ApiAuthError("API key missing or invalid — enter it in Settings.");
   }
   if (!res.ok) {
     const text = await res.text();
@@ -142,6 +153,25 @@ async function request<T>(
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
+}
+
+/** Authenticated download for CSV exports (cannot use bare <a href>). */
+async function downloadAuthenticated(path: string, filename: string): Promise<void> {
+  const key = getApiKey();
+  if (!key) throw new ApiAuthError();
+  const res = await fetch(path, { headers: { "X-Api-Key": key } });
+  if (res.status === 401) {
+    clearApiKey();
+    throw new ApiAuthError("API key missing or invalid — enter it in Settings.");
+  }
+  if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export const api = {
@@ -244,9 +274,11 @@ export const api = {
 
   listLeads: (params?: Record<string, string>) => {
     const qs = params ? "?" + new URLSearchParams(params).toString() : "";
-    return request<{ leads: Lead[]; nextCursor: string | null; total: number }>(`/api/leads${qs}`);
+    return request<{ leads: Lead[]; nextCursor: string | null; total: number }>(`/api/leads${qs}`, {
+      auth: true,
+    });
   },
-  getLead: (id: number) => request<Lead>(`/api/leads/${id}`),
+  getLead: (id: number) => request<Lead>(`/api/leads/${id}`, { auth: true }),
   getOutreachPreview: (id: number) =>
     request<{
       subject: string;
@@ -271,9 +303,9 @@ export const api = {
         body: JSON.stringify({ leads }),
       }
     ),
-  getLeadStats: () => request<LeadStats>("/api/leads/stats"),
+  getLeadStats: () => request<LeadStats>("/api/leads/stats", { auth: true }),
 
-  listLeadNotes: (id: number) => request<LeadNote[]>(`/api/leads/${id}/notes`),
+  listLeadNotes: (id: number) => request<LeadNote[]>(`/api/leads/${id}/notes`, { auth: true }),
   createLeadNote: (id: number, body: string) =>
     request<LeadNote>(`/api/leads/${id}/notes`, {
       method: "POST",
@@ -283,7 +315,8 @@ export const api = {
   deleteLeadNote: (id: number) =>
     request<{ ok: boolean }>(`/api/lead-notes/${id}`, { method: "DELETE", auth: true }),
 
-  listLeadReminders: (id: number) => request<LeadReminder[]>(`/api/leads/${id}/reminders`),
+  listLeadReminders: (id: number) =>
+    request<LeadReminder[]>(`/api/leads/${id}/reminders`, { auth: true }),
   createLeadReminder: (id: number, dueDate: string, message: string) =>
     request<LeadReminder>(`/api/leads/${id}/reminders`, {
       method: "POST",
@@ -299,7 +332,8 @@ export const api = {
   deleteLeadReminder: (id: number) =>
     request<{ ok: boolean }>(`/api/lead-reminders/${id}`, { method: "DELETE", auth: true }),
 
-  listLeadMessages: (id: number) => request<LeadMessage[]>(`/api/leads/${id}/messages`),
+  listLeadMessages: (id: number) =>
+    request<LeadMessage[]>(`/api/leads/${id}/messages`, { auth: true }),
   sendLead: (id: number, body?: { manual?: boolean; overrideDryRun?: boolean }) =>
     request<{ ok?: boolean; sent?: boolean; dryRun?: boolean; reasons?: string[]; error?: string; messageId?: number }>(
       `/api/leads/${id}/send`,
@@ -321,7 +355,8 @@ export const api = {
       { method: "POST", auth: true }
     ),
 
-  getOutreachSettings: () => request<OutreachSettingsView>("/api/outreach/settings"),
+  getOutreachSettings: () =>
+    request<OutreachSettingsView>("/api/outreach/settings", { auth: true }),
   getOutreachPreflight: () => request<OutreachPreflight>("/api/outreach/preflight"),
   listOutreachMessages: (params?: Record<string, string>) => {
     const qs = params ? "?" + new URLSearchParams(params).toString() : "";
@@ -329,14 +364,16 @@ export const api = {
       messages: OutreachMessageListItem[];
       nextCursor: string | null;
       total: number;
-    }>(`/api/outreach/messages${qs}`);
+    }>(`/api/outreach/messages${qs}`, { auth: true });
   },
   getOutreachMessage: (id: number) =>
-    request<OutreachMessageListItem & { body: string | null }>(`/api/outreach/messages/${id}`),
-  getOutreachAnalytics: () => request<OutreachAnalytics>("/api/outreach/analytics"),
-  exportOutreachMessagesCsvUrl: (params?: Record<string, string>) => {
+    request<OutreachMessageListItem & { body: string | null }>(`/api/outreach/messages/${id}`, {
+      auth: true,
+    }),
+  getOutreachAnalytics: () => request<OutreachAnalytics>("/api/outreach/analytics", { auth: true }),
+  exportOutreachMessagesCsv: (params?: Record<string, string>) => {
     const qs = params ? "?" + new URLSearchParams(params).toString() : "";
-    return `/api/outreach/messages.csv${qs}`;
+    return downloadAuthenticated(`/api/outreach/messages.csv${qs}`, "outreach-messages.csv");
   },
   updateOutreachSettings: (body: Record<string, unknown>) =>
     request<OutreachSettingsView>("/api/outreach/settings", {
@@ -354,8 +391,8 @@ export const api = {
     request<{ results: unknown[] }>("/api/outreach/autosend", { method: "POST", auth: true }),
   runSequence: () =>
     request<{ results: unknown[] }>("/api/outreach/sequence", { method: "POST", auth: true }),
-  exportLeadsCsvUrl: (params?: Record<string, string>) => {
+  exportLeadsCsv: (params?: Record<string, string>) => {
     const qs = params ? "?" + new URLSearchParams(params).toString() : "";
-    return `/api/outreach/export.csv${qs}`;
+    return downloadAuthenticated(`/api/outreach/export.csv${qs}`, "outreach-leads.csv");
   },
 };
