@@ -86,6 +86,7 @@ describe("manual send CLI helpers", () => {
   it("--yes skip list does not include PECR / freemail / suppression / demo", () => {
     const hard = filterManualHardReasons([
       "priority_below_threshold",
+      "business_name_implausible",
       "not_corporate_subscriber",
       "freemail_address",
       "lead_suppressed",
@@ -99,6 +100,7 @@ describe("manual send CLI helpers", () => {
       "email_unverified",
       "demo_not_ready",
     ]);
+    expect(MANUAL_SKIP_REASONS).toContain("business_name_implausible");
     for (const r of [
       "not_corporate_subscriber",
       "freemail_address",

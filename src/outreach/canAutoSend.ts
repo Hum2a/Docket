@@ -138,7 +138,8 @@ export function canAutoSend(
     deferred = true;
   }
 
-  // 10 — quality hard blocks (manual/force must not skip these)
+  // 10 — quality hard blocks (auto-send / force). Manual/Approve may skip
+  // business_name_implausible via filterManualHardReasons.
   if (isBusinessNameImplausible(lead.businessName, lead.location)) {
     reasons.push("business_name_implausible");
   }

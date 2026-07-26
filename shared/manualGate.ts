@@ -1,6 +1,7 @@
 /**
- * Manual send skips operational deferrals only.
- * PECR / freemail / suppression / verified-email / demo-ready are never skipped.
+ * Manual / Approve send skips operational deferrals and human-reviewed quality
+ * name flags. PECR / freemail / suppression / verified-email / demo-ready /
+ * postal footer validity are never skipped.
  */
 
 export const MANUAL_SKIP_REASONS = [
@@ -9,6 +10,9 @@ export const MANUAL_SKIP_REASONS = [
   "dry_run",
   "daily_cap_reached",
   "priority_below_threshold",
+  // Human reviewed the preview — trading-name heuristic can false-positive.
+  "business_name_implausible",
+  "business_name_is_domain",
 ] as const;
 
 export type ManualSkipReason = (typeof MANUAL_SKIP_REASONS)[number];

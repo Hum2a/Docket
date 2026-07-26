@@ -361,7 +361,8 @@ outreachApp.get("/api/leads/:id/send-readiness", requireApiKey, async (c) => {
 outreachApp.post("/api/leads/:id/approve", requireApiKey, async (c) => {
   const id = Number(c.req.param("id"));
   const sql = getSql(c.env.DATABASE_URL);
-  // Approve is human attestation: enable PECR + email-verified, then force-send.
+  // Approve is human attestation: PECR + email-verified, and quality name
+  // override via manual (business_name_implausible skippable after preview).
   const lead = await updateLead(sql, id, {
     status: "queued",
     emailVerified: true,
@@ -379,6 +380,7 @@ outreachApp.post("/api/leads/:id/approve", requireApiKey, async (c) => {
     settings,
     origin,
     force: true,
+    manual: true,
   });
   return c.json({ approved: true, ...result });
 });

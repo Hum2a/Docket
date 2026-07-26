@@ -91,17 +91,14 @@ describe("canAutoSend", () => {
 });
 
 describe("quality hard blocks (Task 17)", () => {
-  it("foo.co.uk blocks with business_name_implausible, including under force/manual", () => {
+  it("foo.co.uk blocks auto-send; manual/Approve can override business_name_implausible", () => {
     expect(isBusinessNameDomain("foo.co.uk")).toBe(true);
     expect(isBusinessNameImplausible("foo.co.uk")).toBe(true);
     const r = canAutoSend({ ...baseLead, businessName: "foo.co.uk" }, baseSettings, 0);
     expect(r.ok).toBe(false);
     expect(r.reasons).toContain("business_name_implausible");
-    const hard = filterManualHardReasons(r.reasons);
-    expect(hard).toContain("business_name_implausible");
-    expect(filterManualHardReasons(["business_name_implausible"])).toEqual([
-      "business_name_implausible",
-    ]);
+    expect(filterManualHardReasons(r.reasons)).not.toContain("business_name_implausible");
+    expect(filterManualHardReasons(["business_name_implausible"])).toEqual([]);
   });
 
   it("7-word SEO name blocks with business_name_implausible", () => {

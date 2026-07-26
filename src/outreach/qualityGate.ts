@@ -1,6 +1,7 @@
 /**
- * Quality gates for outbound outreach copy — hard blocks that apply to
- * manual and forced sends as well as auto-send (same class as PECR/freemail).
+ * Quality gates for outbound outreach copy.
+ * Most apply to auto-send and force; `business_name_implausible` is skippable
+ * under manual/Approve (human reviewed the preview) via filterManualHardReasons.
  */
 
 /** Hostname-shaped TLDs that indicate businessName is a domain, not a trading name. */

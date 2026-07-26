@@ -164,8 +164,9 @@ export async function sendLeadOutreach(opts: {
   /** Skip auto_send_disabled / paused / daily_cap. Does not affect dry_run. */
   force?: boolean;
   /**
-   * Manual send from CLI/UI: like force, and also skips priority_below_threshold.
-   * Never skips PECR, freemail, suppression, verified-email, or demo-ready.
+   * Manual send from CLI/UI / Approve: like force, skips priority + human-reviewed
+   * business_name_implausible. Never skips PECR, freemail, suppression,
+   * verified-email, demo-ready, or postal_address_invalid.
    */
   manual?: boolean;
   /** Only flag that allows a live Resend send while settings.dryRun is true. */
