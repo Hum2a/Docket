@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { canAutoSend, type LeadGateInput, type OutreachSettingsGateInput } from "./canAutoSend";
 import { filterManualHardReasons } from "../../shared/manualGate";
-import { industryPlural, renderOutreachCopy, type CopyLeadInput } from "./copy";
+import { industryPlural, industryLocationClause, renderOutreachCopy, type CopyLeadInput } from "./copy";
 import {
   isBusinessNameDomain,
+  isPartitionShapedLocation,
   isValidUkPostalAddress,
   QUALITY_HARD_REASONS,
 } from "./qualityGate";
@@ -23,6 +24,8 @@ const baseLead: LeadGateInput = {
   industry: "accountant",
   observationSignal: "https",
   templateRequiresIndustry: false,
+  templateRequiresLocation: false,
+  location: "Bristol",
   postalAddress: "12 Example Road, Croydon CR0 4JF",
 };
 
@@ -165,6 +168,53 @@ describe("quality hard blocks (Task 17)", () => {
     });
     expect(rendered.text).toContain("local businesses");
     expect(rendered.text).not.toContain("professional-services");
+  });
+
+  it("Uk Sweep partition location triggers location_invalid", () => {
+    expect(isPartitionShapedLocation("Uk Sweep 03 South East Anglia")).toBe(true);
+    const r = canAutoSend(
+      { ...baseLead, location: "Uk Sweep 03 South East Anglia" },
+      baseSettings,
+      0
+    );
+    expect(r.reasons).toContain("location_invalid");
+    expect(filterManualHardReasons(r.reasons)).toContain("location_invalid");
+  });
+
+  it("null location renders like yours and does not block", () => {
+    expect(industryLocationClause("garage", null)).toBe("garages like yours");
+    expect(industryLocationClause("garage", "Grimsby")).toBe("garages around Grimsby");
+
+    const r = canAutoSend(
+      { ...baseLead, location: null, templateRequiresLocation: false },
+      baseSettings,
+      0
+    );
+    expect(r.reasons).not.toContain("location_invalid");
+    expect(r.ok).toBe(true);
+
+    const copyLead: CopyLeadInput = {
+      id: 1,
+      businessName: "Acme Ltd",
+      slug: "acme",
+      industry: "garage",
+      location: null,
+      contactName: null,
+      websiteUrl: "https://acme.co.uk",
+      demoUrl: "https://acme.humza-butt.space",
+      demoExpiresAt: null,
+      offerAmount: 500,
+      audit: { https: false },
+    };
+    const rendered = renderOutreachCopy({
+      lead: copyLead,
+      postalAddress: "12 Example Road, Croydon CR0 4JF",
+      unsubscribeUrl: "https://example.com/u",
+      templateId: "initial",
+    });
+    expect(rendered.text).toContain("garages like yours");
+    expect(rendered.text).not.toContain("around the UK");
+    expect(rendered.text).not.toMatch(/sweep/i);
   });
 
   it("industry_unknown only when templateRequiresIndustry", () => {

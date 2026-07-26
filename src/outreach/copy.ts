@@ -3,6 +3,8 @@
  * No LLM: audit signals only.
  */
 
+import { usableLocation } from "./qualityGate";
+
 export type ObservationSignal =
   | "no_website"
   | "social_only"
@@ -134,6 +136,20 @@ export function industryPlural(industry: string | null | undefined): string {
   if (key.endsWith("y")) return `${key.slice(0, -1)}ies`;
   if (key.endsWith("s")) return key;
   return `${key}s`;
+}
+
+/**
+ * Known town → "around Grimsby"; missing / partition-shaped → "like yours".
+ * Never interpolates a filename into the email body.
+ */
+export function industryLocationClause(
+  industry: string | null | undefined,
+  location: string | null | undefined
+): string {
+  const trade = industryPlural(industry);
+  const place = usableLocation(location);
+  if (place) return `${trade} around ${place}`;
+  return `${trade} like yours`;
 }
 
 export function demoUrlFor(lead: Pick<CopyLeadInput, "demoUrl" | "slug">): string {
@@ -437,14 +453,13 @@ export function renderInitial(opts: {
   const variant = pickSubjectVariant(signal, lead.id);
   const subject = subjectForVariant(variant, lead);
   const demo = demoUrlFor(lead);
-  const location = lead.location?.trim() || "the UK";
   const amount = Number(lead.offerAmount || 500);
 
   const body = `${greeting(lead.contactName)}
 
 ${line}
 
-I build websites for ${industryPlural(lead.industry)} around ${location}. Rather than pitch,
+I build websites for ${industryLocationClause(lead.industry, lead.location)}. Rather than pitch,
 I've already built you one:
 
 ${demo}

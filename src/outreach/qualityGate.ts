@@ -15,6 +15,7 @@ export const QUALITY_HARD_REASONS = [
   "generic_observation",
   "industry_unknown",
   "postal_address_invalid",
+  "location_invalid",
 ] as const;
 
 export type QualityHardReason = (typeof QUALITY_HARD_REASONS)[number];
@@ -27,6 +28,30 @@ export function isBusinessNameDomain(name: string | null | undefined): boolean {
   // No space + contains a dot → hostname-like (e.g. foo.example)
   if (!/\s/.test(n) && n.includes(".")) return true;
   return false;
+}
+
+/**
+ * Partition / batch filenames mistaken for places — must never appear in copy.
+ * Matches: contains sweep|partition|yell|batch, or four or more words.
+ */
+export function isPartitionShapedLocation(location: string | null | undefined): boolean {
+  const v = (location || "").trim();
+  if (!v) return false;
+  const lower = v.toLowerCase();
+  if (/\bsweep\b/.test(lower)) return true;
+  if (/\bpartition\b/.test(lower)) return true;
+  if (/\byell\b/.test(lower)) return true;
+  if (/\bbatch\b/.test(lower)) return true;
+  if (v.split(/\s+/).filter(Boolean).length >= 4) return true;
+  return false;
+}
+
+/** Location safe to interpolate into copy; null → use "like yours" omission. */
+export function usableLocation(location: string | null | undefined): string | null {
+  const v = (location || "").trim();
+  if (!v) return null;
+  if (isPartitionShapedLocation(v)) return null;
+  return v;
 }
 
 /**

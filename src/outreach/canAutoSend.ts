@@ -9,6 +9,7 @@ export {
 import { isFreemail } from "../../shared/freemail";
 import {
   isBusinessNameDomain,
+  isPartitionShapedLocation,
   isValidUkPostalAddress,
 } from "./qualityGate";
 
@@ -33,12 +34,19 @@ export type LeadGateInput = {
    */
   templateRequiresIndustry?: boolean;
   /**
+   * When true, a null/empty location blocks with location_invalid.
+   * Current templates fall back to "like yours" — leave false.
+   * Partition-shaped locations always block regardless.
+   */
+  templateRequiresLocation?: boolean;
+  /** Outreach location field — partition filenames always hard-block. */
+  location?: string | null;
+  /**
    * Resolved postal address (settings/env). When set but invalid → postal_address_invalid.
    * Omit / null when not yet resolved (caller handles postal_address_not_configured).
    */
   postalAddress?: string | null;
 };
-
 export type OutreachSettingsGateInput = {
   autoSendEnabled: boolean;
   dryRun: boolean;
@@ -142,6 +150,14 @@ export function canAutoSend(
     !(lead.industry && lead.industry.trim())
   ) {
     reasons.push("industry_unknown");
+  }
+  if (isPartitionShapedLocation(lead.location)) {
+    reasons.push("location_invalid");
+  } else if (
+    lead.templateRequiresLocation &&
+    !(lead.location && lead.location.trim())
+  ) {
+    reasons.push("location_invalid");
   }
   const postal = lead.postalAddress?.trim();
   if (postal && !isValidUkPostalAddress(postal)) {

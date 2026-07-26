@@ -1110,6 +1110,8 @@ export function leadGateInput(
     industry: lead.industry,
     observationSignal,
     templateRequiresIndustry: false,
+    templateRequiresLocation: false,
+    location: lead.location,
     postalAddress: extras?.postalAddress ?? null,
   };
 }

@@ -46,6 +46,7 @@ export const GATE_REASON_LABELS: Record<string, string> = {
   business_name_is_domain: "business name looks like a domain, not a trading name",
   generic_observation: "observation line is generic — no specific fault stated",
   industry_unknown: "industry unknown and template requires a trade phrase",
+  location_invalid: "location is missing or looks like a partition filename",
 };
 
 export function labelGateReason(reason: string): string {
