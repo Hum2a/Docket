@@ -5,6 +5,7 @@ import { LEAD_STATUSES } from "@shared/outreach";
 import { api } from "../../lib/api";
 import { LeadStatusSelect } from "../../components/LeadStatusSelect";
 import { ContactRouteChip } from "../../components/ContactRouteChip";
+import { DemoChip } from "../../components/DemoChip";
 import { outreachStatusLabel } from "../../lib/mode";
 
 type SortKey =
@@ -31,6 +32,7 @@ export function OutreachListPage() {
   const [status, setStatus] = useState("");
   const [industry, setIndustry] = useState("");
   const [contactRouteFilter, setContactRouteFilter] = useState("");
+  const [demoStatusFilter, setDemoStatusFilter] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("priorityScore");
   const [sortDir, setSortDir] = useState<-1 | 1>(-1);
   const [deleting, setDeleting] = useState<number | null>(null);
@@ -86,6 +88,7 @@ export function OutreachListPage() {
       if (status && r.status !== status) return false;
       if (industry && r.industry !== industry) return false;
       if (contactRouteFilter && r.contactRoute !== contactRouteFilter) return false;
+      if (demoStatusFilter && r.demoStatus !== demoStatusFilter) return false;
       if (query) {
         const hay = [
           r.businessName,
@@ -114,7 +117,7 @@ export function OutreachListPage() {
       return 0;
     });
     return list;
-  }, [leads, q, status, industry, contactRouteFilter, sortKey, sortDir, pipelineMode]);
+  }, [leads, q, status, industry, contactRouteFilter, demoStatusFilter, sortKey, sortDir, pipelineMode]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) setSortDir((d) => (d === 1 ? -1 : 1));
@@ -211,6 +214,14 @@ export function OutreachListPage() {
           <option value="form">Form</option>
           <option value="none">No contact</option>
         </select>
+        <select value={demoStatusFilter} onChange={(e) => setDemoStatusFilter(e.target.value)}>
+          <option value="">All demos</option>
+          <option value="ready">Demo live</option>
+          <option value="building">Demo building</option>
+          <option value="failed">Demo failed</option>
+          <option value="expired">Demo expired</option>
+          <option value="none">No demo</option>
+        </select>
       </div>
 
       <div className="panel table-wrap">
@@ -235,6 +246,11 @@ export function OutreachListPage() {
                 </td>
                 <td>
                   <ContactRouteChip route={l.contactRoute} />
+                  <DemoChip
+                    demoStatus={l.demoStatus}
+                    demoUrl={l.demoUrl}
+                    demoExpiresAt={l.demoExpiresAt}
+                  />
                 </td>
                 <td>{l.industry || "—"}</td>
                 <td>{l.location || l.postcode || "—"}</td>

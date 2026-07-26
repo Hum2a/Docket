@@ -531,7 +531,7 @@ outreachApp.get("/api/outreach/export.csv", async (c) => {
     corporateOnly: c.req.query("corporate") === "1",
   });
   const header =
-    "name,contact,contact route,industry,location,need score,likelihood score,priority score,demo URL,outreach status,follow-up date";
+    "name,contact,contact route,industry,location,need score,likelihood score,priority score,demo status,demo URL,outreach status,follow-up date";
   const lines = leads.map((l) => {
     const contact = l.contactEmail || l.contactPhone || "form only";
     const cells = [
@@ -543,6 +543,7 @@ outreachApp.get("/api/outreach/export.csv", async (c) => {
       l.needScore ?? "",
       l.likelihoodScore ?? "",
       l.priorityScore ?? "",
+      l.demoStatus,
       l.demoUrl ?? "",
       l.status,
       l.nextFollowupAt?.slice(0, 10) ?? "",

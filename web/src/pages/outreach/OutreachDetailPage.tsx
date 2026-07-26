@@ -4,6 +4,7 @@ import type { Lead, LeadStatus } from "@shared/outreach";
 import { api, type LeadMessage, type LeadNote, type LeadReminder } from "../../lib/api";
 import { LeadStatusSelect } from "../../components/LeadStatusSelect";
 import { ContactRouteChip } from "../../components/ContactRouteChip";
+import { DemoChip } from "../../components/DemoChip";
 import { SendEmailButton } from "../../components/SendEmailButton";
 import { blockingTooltip, useOutreachPreflight } from "../../lib/useOutreachPreflight";
 
@@ -364,6 +365,11 @@ export function OutreachDetailPage() {
           <h1>{lead.businessName}</h1>
           <div style={{ marginTop: "0.35rem" }}>
             <ContactRouteChip route={lead.contactRoute} />
+            <DemoChip
+              demoStatus={lead.demoStatus}
+              demoUrl={lead.demoUrl}
+              demoExpiresAt={lead.demoExpiresAt}
+            />
           </div>
         </div>
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
@@ -580,15 +586,14 @@ export function OutreachDetailPage() {
         <div className="detail-side">
           <section className="panel" style={{ padding: "1.25rem" }}>
             <h2>Scores & audit</h2>
-            <p className="meta">
-              Demo: {lead.demoStatus}
-              {lead.demoUrl ? (
-                <>
-                  {" · "}
-                  <a href={lead.demoUrl} target="_blank" rel="noreferrer">
-                    open
-                  </a>
-                </>
+            <p className="meta" style={{ display: "flex", alignItems: "center", gap: "0.35rem", flexWrap: "wrap" }}>
+              <DemoChip
+                demoStatus={lead.demoStatus}
+                demoUrl={lead.demoUrl}
+                demoExpiresAt={lead.demoExpiresAt}
+              />
+              {lead.demoExpiresAt ? (
+                <span className="muted">expires {lead.demoExpiresAt.slice(0, 10)}</span>
               ) : null}
             </p>
             <p className="meta">

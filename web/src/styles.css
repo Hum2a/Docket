@@ -978,6 +978,41 @@ table.data .status-select {
   color: #a32d2d;
 }
 
+.demo-status {
+  display: inline-block;
+  padding: 0.12rem 0.45rem;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  margin-left: 0.35rem;
+}
+.demo-status-ready {
+  background: #d8f3dc;
+  color: #0f6e56;
+}
+.demo-status-expiring {
+  background: #fde8c8;
+  color: #8a4b08;
+}
+.demo-status-building {
+  background: #dbeafe;
+  color: #1e40af;
+}
+.demo-status-failed {
+  background: #fde2e1;
+  color: #a32d2d;
+}
+.demo-status-expired {
+  background: #e8eaed;
+  color: #5f6368;
+}
+.demo-status-none {
+  background: #f1f3f5;
+  color: #6b7280;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;

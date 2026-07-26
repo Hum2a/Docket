@@ -19,6 +19,7 @@ import { api } from "../../lib/api";
 import { Modal } from "../../components/Modal";
 import { LeadStatusSelect } from "../../components/LeadStatusSelect";
 import { ContactRouteChip } from "../../components/ContactRouteChip";
+import { DemoChip } from "../../components/DemoChip";
 import { outreachStatusLabel } from "../../lib/mode";
 
 /** Visible board columns (canonical drop status). */
@@ -73,6 +74,11 @@ function Card({
       <h3>{lead.businessName}</h3>
       <div style={{ marginBottom: "0.35rem" }}>
         <ContactRouteChip route={lead.contactRoute} />
+        <DemoChip
+          demoStatus={lead.demoStatus}
+          demoUrl={lead.demoUrl}
+          demoExpiresAt={lead.demoExpiresAt}
+        />
       </div>
       <p className="meta">{lead.industry || "—"}</p>
       <p className="meta">{lead.location || lead.postcode || ""}</p>

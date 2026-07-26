@@ -3,6 +3,7 @@ import { toDateOnly } from "./db";
 import type { CreateLead, Lead, LeadStatus, OutreachSettings, UpdateLead } from "../shared/outreach";
 import { demoExpiresAtFrom, slugifyName } from "../shared/outreach";
 import { contactRoute } from "../shared/contactRoute";
+import { statusAfterDemoReady } from "../shared/demoStatus";
 import { normalizeBusinessKey, planBulkUpserts } from "./outreach/bulkUpsert";
 import { canAutoSend } from "./outreach/canAutoSend";
 import {
@@ -341,6 +342,8 @@ export async function updateLead(sql: Sql, id: number, updates: UpdateLead): Pro
 
   const nextDemoStatus = updates.demoStatus ?? existing.demoStatus;
   const becomingReady = nextDemoStatus === "ready" && existing.demoStatus !== "ready";
+  // Explicit demoStatus:ready in the patch (publish / re-publish) may advance pipeline status.
+  const publishingReady = updates.demoStatus === "ready";
 
   // Partial UPDATE — only touch fields present on `updates` (plus demo expiry when
   // becoming ready). Avoids rewriting every column and the fragile `${json}::jsonb`
@@ -402,6 +405,11 @@ export async function updateLead(sql: Sql, id: number, updates: UpdateLead): Pro
 
   if (becomingReady) {
     add("demo_expires_at", demoExpiresAtFrom());
+  }
+
+  if (publishingReady && updates.status === undefined) {
+    const advanced = statusAfterDemoReady(existing.status);
+    if (advanced) add("status", advanced);
   }
 
   if (sets.length === 0) {
