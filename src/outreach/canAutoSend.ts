@@ -8,7 +8,7 @@ export {
 
 import { isFreemail } from "../../shared/freemail";
 import {
-  isBusinessNameDomain,
+  isBusinessNameImplausible,
   isPartitionShapedLocation,
   isValidUkPostalAddress,
 } from "./qualityGate";
@@ -139,8 +139,8 @@ export function canAutoSend(
   }
 
   // 10 — quality hard blocks (manual/force must not skip these)
-  if (isBusinessNameDomain(lead.businessName)) {
-    reasons.push("business_name_is_domain");
+  if (isBusinessNameImplausible(lead.businessName, lead.location)) {
+    reasons.push("business_name_implausible");
   }
   if (lead.observationSignal === "generic") {
     reasons.push("generic_observation");

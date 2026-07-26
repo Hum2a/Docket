@@ -4,9 +4,9 @@ import { filterManualHardReasons } from "../../shared/manualGate";
 import { industryPlural, industryLocationClause, renderOutreachCopy, type CopyLeadInput } from "./copy";
 import {
   isBusinessNameDomain,
+  isBusinessNameImplausible,
   isPartitionShapedLocation,
   isValidUkPostalAddress,
-  QUALITY_HARD_REASONS,
 } from "./qualityGate";
 import { buildSendConfirmPreview, sendConfirmBlocked } from "./sendConfirm";
 import { mergeLeadUpdate, planBulkUpserts } from "./bulkUpsert";
@@ -91,17 +91,47 @@ describe("canAutoSend", () => {
 });
 
 describe("quality hard blocks (Task 17)", () => {
-  it("foo.co.uk blocks with business_name_is_domain, including under force/manual", () => {
+  it("foo.co.uk blocks with business_name_implausible, including under force/manual", () => {
     expect(isBusinessNameDomain("foo.co.uk")).toBe(true);
+    expect(isBusinessNameImplausible("foo.co.uk")).toBe(true);
     const r = canAutoSend({ ...baseLead, businessName: "foo.co.uk" }, baseSettings, 0);
     expect(r.ok).toBe(false);
-    expect(r.reasons).toContain("business_name_is_domain");
-    // force/manual only skip operational reasons — quality reasons remain
+    expect(r.reasons).toContain("business_name_implausible");
     const hard = filterManualHardReasons(r.reasons);
-    expect(hard).toContain("business_name_is_domain");
-    for (const reason of QUALITY_HARD_REASONS) {
-      expect(filterManualHardReasons([reason])).toEqual([reason]);
-    }
+    expect(hard).toContain("business_name_implausible");
+    expect(filterManualHardReasons(["business_name_implausible"])).toEqual([
+      "business_name_implausible",
+    ]);
+  });
+
+  it("7-word SEO name blocks with business_name_implausible", () => {
+    const name = "Canacraft in Ipswich provides vehicle bodywork services";
+    expect(name.split(/\s+/).length).toBeGreaterThan(5);
+    expect(isBusinessNameImplausible(name)).toBe(true);
+    const r = canAutoSend({ ...baseLead, businessName: name }, baseSettings, 0);
+    expect(r.reasons).toContain("business_name_implausible");
+  });
+
+  it("B & S Refrigeration and QMS names still pass", () => {
+    expect(isBusinessNameImplausible("B & S Refrigeration")).toBe(false);
+    expect(isBusinessNameImplausible("Quality Machining Services (GY) Ltd")).toBe(false);
+    expect(
+      canAutoSend({ ...baseLead, businessName: "B & S Refrigeration" }, baseSettings, 0).ok
+    ).toBe(true);
+    expect(
+      canAutoSend(
+        { ...baseLead, businessName: "Quality Machining Services (GY) Ltd" },
+        baseSettings,
+        0
+      ).ok
+    ).toBe(true);
+  });
+
+  it("Victor Stewart in Southampton blocks when location is Southampton", () => {
+    expect(
+      isBusinessNameImplausible("Victor Stewart in Southampton", "Southampton")
+    ).toBe(true);
+    expect(isBusinessNameImplausible("Victor Stewart", "Southampton")).toBe(false);
   });
 
   it("generic observation blocks; a specific signal does not", () => {
@@ -257,7 +287,7 @@ describe("quality hard blocks (Task 17)", () => {
     expect(fromModal.subject).toBe(fromRender.subject);
     expect(fromModal.text).toBe(fromRender.text);
     expect(fromModal.text).toContain("--\nHumza Butt ·");
-    expect(sendConfirmBlocked(["business_name_is_domain"])).toBe(true);
+    expect(sendConfirmBlocked(["business_name_implausible"])).toBe(true);
     expect(sendConfirmBlocked([])).toBe(false);
   });
 });

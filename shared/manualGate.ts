@@ -43,6 +43,7 @@ export const GATE_REASON_LABELS: Record<string, string> = {
   postal_address_set: "postal address not set",
   unsubscribe_key_set: "unsubscribe key not set",
   resend_key_set: "Resend API key not set",
+  business_name_implausible: "business name looks like SEO copy or a domain, not a trading name",
   business_name_is_domain: "business name looks like a domain, not a trading name",
   generic_observation: "observation line is generic — no specific fault stated",
   industry_unknown: "industry unknown and template requires a trade phrase",

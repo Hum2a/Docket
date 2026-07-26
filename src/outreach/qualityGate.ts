@@ -11,7 +11,8 @@ const DOMAINISH_TLD =
 export const UK_POSTCODE_RE = /\b[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}\b/i;
 
 export const QUALITY_HARD_REASONS = [
-  "business_name_is_domain",
+  "business_name_implausible",
+  "business_name_is_domain", // legacy alias — normalised to implausible in canAutoSend
   "generic_observation",
   "industry_unknown",
   "postal_address_invalid",
@@ -20,7 +21,7 @@ export const QUALITY_HARD_REASONS = [
 
 export type QualityHardReason = (typeof QUALITY_HARD_REASONS)[number];
 
-/** True when `businessName` looks like a hostname rather than a trading name. */
+/** Hostname-shaped TLDs that indicate businessName is a domain, not a trading name. */
 export function isBusinessNameDomain(name: string | null | undefined): boolean {
   const n = (name || "").trim();
   if (!n) return false;
@@ -28,6 +29,41 @@ export function isBusinessNameDomain(name: string | null | undefined): boolean {
   // No space + contains a dot → hostname-like (e.g. foo.example)
   if (!/\s/.test(n) && n.includes(".")) return true;
   return false;
+}
+
+const SERVICE_VERB_IN_NAME =
+  /\b(provides?|offers?|serving|specialising|specializing|expertise)\b/i;
+
+/**
+ * Trading name is implausible for outreach — SEO sentence, domain, or no capitals.
+ * Review-queue reason (blocks send until a human edits the name).
+ */
+export function isBusinessNameImplausible(
+  name: string | null | undefined,
+  location?: string | null
+): boolean {
+  const n = (name || "").trim();
+  if (!n) return false;
+  if (isBusinessNameDomain(n)) return true;
+
+  const words = n.split(/\s+/).filter(Boolean);
+  if (words.length > 5) return true;
+  if (SERVICE_VERB_IN_NAME.test(n)) return true;
+
+  const town = (location || "").trim();
+  if (town) {
+    const inTown = new RegExp(`\\bin\\s+${escapeRe(town)}\\b`, "i");
+    if (inTown.test(n)) return true;
+  }
+
+  // No capitalised word at all
+  if (!words.some((w) => /^[A-Z]/.test(w))) return true;
+
+  return false;
+}
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**
