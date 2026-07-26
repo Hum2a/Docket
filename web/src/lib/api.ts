@@ -350,10 +350,14 @@ export const api = {
       blocking: string[];
     }>(`/api/leads/${id}/send-readiness`, { auth: true }),
   approveLead: (id: number) =>
-    request<{ approved: boolean; ok?: boolean; dryRun?: boolean; reasons?: string[] }>(
-      `/api/leads/${id}/approve`,
-      { method: "POST", auth: true }
-    ),
+    request<{
+      approved: boolean;
+      sent?: boolean;
+      dryRun?: boolean;
+      deferred?: boolean;
+      reasons?: string[];
+      ok?: boolean;
+    }>(`/api/leads/${id}/approve`, { method: "POST", auth: true }),
 
   getOutreachSettings: () =>
     request<OutreachSettingsView>("/api/outreach/settings", { auth: true }),

@@ -13,6 +13,18 @@ type Preview = {
   source: string;
 };
 
+function stillInReviewQueue(l: Lead): boolean {
+  // Sent / replied / closed leads leave the queue.
+  if (["sent", "followed_up", "replied", "interested", "won", "lost"].includes(l.status)) {
+    return false;
+  }
+  return (
+    l.reviewReasons.length > 0 ||
+    l.status === "queued" ||
+    l.status === "demo_ready"
+  );
+}
+
 export function OutreachQueuePage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [previews, setPreviews] = useState<Record<number, Preview | null>>({});
@@ -22,17 +34,21 @@ export function OutreachQueuePage() {
   const { preflight, ready } = useOutreachPreflight();
   const sendBlockedTitle = ready ? undefined : blockingTooltip(preflight?.blocking ?? []);
 
+  const dropLead = useCallback((id: number) => {
+    setLeads((prev) => prev.filter((l) => l.id !== id));
+    setPreviews((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }, []);
+
   const load = useCallback(async () => {
     setError(null);
     try {
       const page = await api.listLeads({ limit: "200" });
       const filtered = page.leads
-        .filter(
-          (l) =>
-            l.reviewReasons.length > 0 ||
-            l.status === "queued" ||
-            l.status === "demo_ready"
-        )
+        .filter(stillInReviewQueue)
         .sort((a, b) => (b.priorityScore ?? 0) - (a.priorityScore ?? 0));
       setLeads(filtered);
       const entries = await Promise.all(
@@ -61,16 +77,29 @@ export function OutreachQueuePage() {
     setError(null);
     try {
       const res = await api.approveLead(id);
+      const sent = res.sent === true;
+      const dryRun = res.dryRun === true;
+      const blocked = !sent && !dryRun;
+
+      if (blocked) {
+        setError(
+          `Approve blocked for #${id}: ${(res.reasons || []).join(", ") || "send failed"}`
+        );
+        await load();
+        return;
+      }
+
+      // Leave the queue immediately — don't wait for the full reload/preview cycle.
+      dropLead(id);
       setMessage(
-        res.dryRun
+        dryRun
           ? `Approved #${id} (dry run — message queued).`
-          : res.ok === false
-            ? `Approve blocked: ${(res.reasons || []).join(", ")}`
-            : `Approved & sent #${id}.`
+          : `Approved & sent #${id}.`
       );
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      await load();
     } finally {
       setBusyId(null);
     }
@@ -82,16 +111,26 @@ export function OutreachQueuePage() {
     setError(null);
     try {
       const res = await api.sendLead(id);
+      const sent = res.sent === true;
+      const dryRun = res.dryRun === true;
+      const blocked = !sent && !dryRun;
+
+      if (blocked) {
+        setError(
+          `Send blocked for #${id}: ${(res.reasons || []).join(", ") || res.error || "send failed"}`
+        );
+        await load();
+        return;
+      }
+
+      dropLead(id);
       setMessage(
-        res.ok === false
-          ? `Send blocked: ${(res.reasons || []).join(", ")}`
-          : res.dryRun
-            ? `Queued dry-run message for #${id}.`
-            : `Sent #${id}.`
+        dryRun ? `Queued dry-run message for #${id}.` : `Sent #${id}.`
       );
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      await load();
     } finally {
       setBusyId(null);
     }
@@ -145,7 +184,13 @@ export function OutreachQueuePage() {
                   )}
                 </div>
                 <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
-                  <SendEmailButton lead={l} onDone={() => void load()} />
+                  <SendEmailButton
+                    lead={l}
+                    onDone={() => {
+                      dropLead(l.id);
+                      void load();
+                    }}
+                  />
                   <button
                     type="button"
                     className="btn btn-ghost"
