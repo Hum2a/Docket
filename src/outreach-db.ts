@@ -8,6 +8,10 @@ import { normalizeBusinessKey, planBulkUpserts } from "./outreach/bulkUpsert";
 import { canAutoSend } from "./outreach/canAutoSend";
 import { getPersistedOutreach, pickObservation } from "./outreach/copy";
 import {
+  shouldAutoCorporate,
+  shouldAutoVerifyEmail,
+} from "./outreach/sendFlags";
+import {
   clampLeadLimit,
   decodeLeadCursor,
   encodeLeadCursor,
@@ -304,9 +308,15 @@ function uniqueSlug(base: string, suffix: string): string {
 export async function createLead(sql: Sql, input: CreateLead): Promise<Lead> {
   const slug = input.slug || slugifyName(input.businessName);
   const entityType = input.entityType ?? "unknown";
-  const corporate =
-    input.corporateSubscriber ??
-    ["ltd", "llp", "scottish_partnership", "public_body"].includes(entityType);
+  const corporate = shouldAutoCorporate({
+    contactEmail: input.contactEmail,
+    corporateSubscriber: Boolean(input.corporateSubscriber),
+    entityType,
+    companiesHouseNumber: input.companiesHouseNumber,
+    hasWebsite: input.hasWebsite,
+  });
+  const emailVerified =
+    Boolean(input.emailVerified) || shouldAutoVerifyEmail(input.contactEmail);
   const demoStatus = input.demoStatus ?? "none";
   const demoExpiresAt = demoStatus === "ready" ? demoExpiresAtFrom() : null;
 
@@ -322,7 +332,7 @@ export async function createLead(sql: Sql, input: CreateLead): Promise<Lead> {
       ${input.businessName}, ${slug}, ${input.industry ?? null}, ${input.location ?? null},
       ${input.postcode ?? null}, ${input.address ?? null},
       ${input.contactName ?? null}, ${input.contactEmail ?? null}, ${input.contactPhone ?? null},
-      ${input.contactFormUrl ?? null}, ${input.emailSource ?? null}, ${input.emailVerified ?? false},
+      ${input.contactFormUrl ?? null}, ${input.emailSource ?? null}, ${emailVerified},
       ${input.websiteUrl ?? null}, ${input.hasWebsite ?? false},
       ${input.companiesHouseNumber ?? null}, ${entityType}, ${corporate},
       ${input.chStatus ?? null}, ${input.incorporatedOn ?? null},
@@ -519,9 +529,31 @@ export async function bulkUpsertLeads(
         const lead = await createLead(sql, { ...input, slug });
         created.push(lead.id);
       } else {
-        // update without protected fields — updateLead schema path omits status if not passed
+        const existing = await getLeadById(sql, plan.existingId);
+        if (!existing) {
+          skipped++;
+          continue;
+        }
+        // Prefer auto / existing true over pipeline false for PECR + verified flags.
+        const corporateSubscriber = shouldAutoCorporate({
+          contactEmail: input.contactEmail ?? existing.contactEmail,
+          corporateSubscriber:
+            Boolean(input.corporateSubscriber) || existing.corporateSubscriber,
+          entityType: input.entityType ?? existing.entityType,
+          companiesHouseNumber:
+            input.companiesHouseNumber ?? existing.companiesHouseNumber,
+          hasWebsite: input.hasWebsite ?? existing.hasWebsite,
+        });
+        const emailVerified =
+          Boolean(input.emailVerified) ||
+          existing.emailVerified ||
+          shouldAutoVerifyEmail(input.contactEmail ?? existing.contactEmail);
         const { status: _s, ...safe } = input;
-        const lead = await updateLead(sql, plan.existingId, safe);
+        const lead = await updateLead(sql, plan.existingId, {
+          ...safe,
+          corporateSubscriber,
+          emailVerified,
+        });
         if (lead) updated.push(lead.id);
       }
     } catch (e) {

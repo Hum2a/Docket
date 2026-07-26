@@ -45,6 +45,7 @@ import { canAutoSend, emailDomain } from "./outreach/canAutoSend";
 import { buildOutreachPreflight } from "./outreach/preflight";
 import { validateCustomBody } from "./outreach/draft";
 import { filterManualHardReasons, labelGateReason } from "../shared/manualGate";
+import { sendFlagPatch } from "./outreach/sendFlags";
 import { sendLeadOutreach, signUnsubscribeToken, verifyUnsubscribeToken } from "./outreach-send";
 import { resolveNotifyRecipients } from "./db";
 import { DEFAULT_FROM, sendResendEmail } from "./email";
@@ -290,8 +291,12 @@ outreachApp.post("/api/leads/:id/send", requireApiKey, async (c) => {
     body = {};
   }
   const sql = getSql(c.env.DATABASE_URL);
-  const lead = await getLeadById(sql, id);
+  let lead = await getLeadById(sql, id);
   if (!lead) return c.json({ error: "not found" }, 404);
+  const flagPatch = sendFlagPatch(lead);
+  if (Object.keys(flagPatch).length > 0) {
+    lead = (await updateLead(sql, id, flagPatch)) ?? lead;
+  }
   const settings = await getOutreachSettings(sql);
   const origin = new URL(c.req.url).origin;
   const manual = body.manual === true;
@@ -313,8 +318,12 @@ outreachApp.get("/api/leads/:id/send-readiness", requireApiKey, async (c) => {
   const id = Number(c.req.param("id"));
   if (!Number.isInteger(id)) return c.json({ error: "id must be an integer" }, 400);
   const sql = getSql(c.env.DATABASE_URL);
-  const lead = await getLeadById(sql, id);
+  let lead = await getLeadById(sql, id);
   if (!lead) return c.json({ error: "not found" }, 404);
+  const flagPatch = sendFlagPatch(lead);
+  if (Object.keys(flagPatch).length > 0) {
+    lead = (await updateLead(sql, id, flagPatch)) ?? lead;
+  }
   const settings = await getOutreachSettings(sql);
   const preflight = buildOutreachPreflight(settings, c.env);
   const postal = resolvePostalAddress(settings, c.env);
@@ -352,7 +361,12 @@ outreachApp.get("/api/leads/:id/send-readiness", requireApiKey, async (c) => {
 outreachApp.post("/api/leads/:id/approve", requireApiKey, async (c) => {
   const id = Number(c.req.param("id"));
   const sql = getSql(c.env.DATABASE_URL);
-  const lead = await updateLead(sql, id, { status: "queued" });
+  // Approve is human attestation: enable PECR + email-verified, then force-send.
+  const lead = await updateLead(sql, id, {
+    status: "queued",
+    emailVerified: true,
+    corporateSubscriber: true,
+  });
   if (!lead) return c.json({ error: "not found" }, 404);
   await sql`UPDATE leads SET review_reasons = '{}', updated_at = now() WHERE id = ${id}`;
   const settings = await getOutreachSettings(sql);

@@ -36,6 +36,13 @@ export function normalizeBusinessKey(name: string, postcode?: string | null): st
   return `${name.trim().toLowerCase()}|${(postcode ?? "").trim().toLowerCase()}`;
 }
 
+const NO_DOWNGRADE = new Set([
+  "corporateSubscriber",
+  "corporate_subscriber",
+  "emailVerified",
+  "email_verified",
+]);
+
 /** Fields the pipeline may update on an existing lead. */
 export function mergeLeadUpdate(
   existing: Record<string, unknown>,
@@ -45,6 +52,8 @@ export function mergeLeadUpdate(
   for (const [key, value] of Object.entries(incoming)) {
     if (value === undefined) continue;
     if (PROTECTED.has(key)) continue;
+    // Re-pushes must not clear PECR / verified flags a human (or prior push) set.
+    if (NO_DOWNGRADE.has(key) && value === false && existing[key] === true) continue;
     out[key] = value;
   }
   return out;
