@@ -18,6 +18,7 @@ import { slugifyName } from "@shared/outreach";
 import { api } from "../../lib/api";
 import { Modal } from "../../components/Modal";
 import { LeadStatusSelect } from "../../components/LeadStatusSelect";
+import { ContactRouteChip } from "../../components/ContactRouteChip";
 import { outreachStatusLabel } from "../../lib/mode";
 
 /** Visible board columns (canonical drop status). */
@@ -70,6 +71,9 @@ function Card({
       {...attributes}
     >
       <h3>{lead.businessName}</h3>
+      <div style={{ marginBottom: "0.35rem" }}>
+        <ContactRouteChip route={lead.contactRoute} />
+      </div>
       <p className="meta">{lead.industry || "—"}</p>
       <p className="meta">{lead.location || lead.postcode || ""}</p>
       {lead.priorityScore != null && (

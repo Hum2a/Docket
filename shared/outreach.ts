@@ -125,6 +125,8 @@ export type Lead = {
   /** Hand-written initial body (footer still appended by the system). */
   customBody: string | null;
   draftUpdatedAt: string | null;
+  /** Derived contact channel — computed, not stored. */
+  contactRoute: "email" | "freemail" | "phone" | "form" | "none";
 };
 
 export type OutreachSettings = {

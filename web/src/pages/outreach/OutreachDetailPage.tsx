@@ -3,6 +3,8 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import type { Lead, LeadStatus } from "@shared/outreach";
 import { api, type LeadMessage, type LeadNote, type LeadReminder } from "../../lib/api";
 import { LeadStatusSelect } from "../../components/LeadStatusSelect";
+import { ContactRouteChip } from "../../components/ContactRouteChip";
+import { SendEmailButton } from "../../components/SendEmailButton";
 import { blockingTooltip, useOutreachPreflight } from "../../lib/useOutreachPreflight";
 
 function DraftPanel({
@@ -356,6 +358,9 @@ export function OutreachDetailPage() {
             ← Board
           </Link>
           <h1>{lead.businessName}</h1>
+          <div style={{ marginTop: "0.35rem" }}>
+            <ContactRouteChip route={lead.contactRoute} />
+          </div>
         </div>
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
           <LeadStatusSelect
@@ -363,9 +368,10 @@ export function OutreachDetailPage() {
             disabled={statusSaving}
             onChange={(s) => void saveStatus(s)}
           />
+          <SendEmailButton lead={lead} onDone={() => void load()} />
           <button
             type="button"
-            className="btn"
+            className="btn btn-ghost"
             disabled={actionBusy || !ready}
             title={sendBlockedTitle}
             onClick={() => void runSend(true)}

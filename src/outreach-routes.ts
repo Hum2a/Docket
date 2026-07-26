@@ -33,14 +33,17 @@ import {
   listOutreachMessagesPage,
   getOutreachAnalytics,
   getOutreachMessageById,
+  isSuppressed,
+  leadGateInput,
   setLeadReminderCompleted,
   updateLead,
   updateOutreachSettings,
 } from "./outreach-db";
 import { bareDomain, applyCustomInitialCopy, renderOutreachCopy, resolvePostalAddress, resolveTemplateId } from "./outreach/copy";
-import { emailDomain } from "./outreach/canAutoSend";
+import { canAutoSend, emailDomain } from "./outreach/canAutoSend";
 import { buildOutreachPreflight } from "./outreach/preflight";
 import { validateCustomBody } from "./outreach/draft";
+import { filterManualHardReasons, labelGateReason } from "../shared/manualGate";
 import { sendLeadOutreach, signUnsubscribeToken, verifyUnsubscribeToken } from "./outreach-send";
 import { resolveNotifyRecipients } from "./db";
 import { DEFAULT_FROM, sendResendEmail } from "./email";
@@ -288,13 +291,69 @@ outreachApp.get("/api/leads/:id/messages", async (c) => {
 
 outreachApp.post("/api/leads/:id/send", requireApiKey, async (c) => {
   const id = Number(c.req.param("id"));
+  let body: Record<string, unknown> = {};
+  try {
+    body = (await c.req.json()) as Record<string, unknown>;
+  } catch {
+    body = {};
+  }
   const sql = getSql(c.env.DATABASE_URL);
   const lead = await getLeadById(sql, id);
   if (!lead) return c.json({ error: "not found" }, 404);
   const settings = await getOutreachSettings(sql);
   const origin = new URL(c.req.url).origin;
-  const result = await sendLeadOutreach({ sql, env: c.env, lead, settings, origin, force: true });
+  const manual = body.manual === true;
+  const overrideDryRun = body.overrideDryRun === true;
+  const result = await sendLeadOutreach({
+    sql,
+    env: c.env,
+    lead,
+    settings,
+    origin,
+    force: true,
+    manual,
+    overrideDryRun,
+  });
   return c.json(result);
+});
+
+outreachApp.get("/api/leads/:id/send-readiness", requireApiKey, async (c) => {
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id)) return c.json({ error: "id must be an integer" }, 400);
+  const sql = getSql(c.env.DATABASE_URL);
+  const lead = await getLeadById(sql, id);
+  if (!lead) return c.json({ error: "not found" }, 404);
+  const settings = await getOutreachSettings(sql);
+  const preflight = buildOutreachPreflight(settings, c.env);
+  let suppressedExtra = false;
+  if (lead.contactEmail) suppressedExtra = await isSuppressed(sql, lead.contactEmail);
+  const gateLead = leadGateInput(lead);
+  if (suppressedExtra) gateLead.suppressed = true;
+  const hard = canAutoSend(
+    gateLead,
+    {
+      autoSendEnabled: true,
+      dryRun: false,
+      autoSendThreshold: settings.autoSendThreshold,
+      dailySendCap: settings.dailySendCap,
+      pausedUntil: null,
+    },
+    0
+  );
+  const reasons = filterManualHardReasons(hard.reasons);
+  const blocking = [
+    ...reasons.map(labelGateReason),
+    ...preflight.blocking.map(labelGateReason),
+  ];
+  return c.json({
+    ok: reasons.length === 0 && preflight.ready,
+    reasons,
+    labels: reasons.map(labelGateReason),
+    preflightReady: preflight.ready,
+    preflightBlocking: preflight.blocking,
+    dryRun: settings.dryRun,
+    blocking,
+  });
 });
 
 outreachApp.post("/api/leads/:id/approve", requireApiKey, async (c) => {
@@ -472,12 +531,13 @@ outreachApp.get("/api/outreach/export.csv", async (c) => {
     corporateOnly: c.req.query("corporate") === "1",
   });
   const header =
-    "name,contact,industry,location,need score,likelihood score,priority score,demo URL,outreach status,follow-up date";
+    "name,contact,contact route,industry,location,need score,likelihood score,priority score,demo URL,outreach status,follow-up date";
   const lines = leads.map((l) => {
     const contact = l.contactEmail || l.contactPhone || "form only";
     const cells = [
       l.businessName,
       contact,
+      l.contactRoute,
       l.industry ?? "",
       l.location ?? "",
       l.needScore ?? "",

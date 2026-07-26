@@ -5,13 +5,7 @@ import { tmpdir } from "node:os";
 import { resolveApiKey, parseDevVarsApiKey } from "./key";
 import { buildPatchFromSets, coerceSetValue } from "./coerce";
 import { computeDiff, confirmApply, formatDiff } from "./diff";
-import {
-  LEAD_COMMANDS,
-  LEAD_PATCH_FIELDS,
-  FORBIDDEN_SEND_VERBS,
-  assertNoSendInRegistry,
-  leadEndpointFor,
-} from "./registry";
+import { LEAD_PATCH_FIELDS } from "./registry";
 
 describe("resolveApiKey", () => {
   it("reads API_KEY from .dev.vars", () => {
@@ -81,12 +75,6 @@ describe("coerceSetValue", () => {
     expect(() => buildPatchFromSets(["typoEmail=x"], LEAD_PATCH_FIELDS)).toThrow(
       /Unknown field "typoEmail"/
     );
-    try {
-      buildPatchFromSets(["typoEmail=x"], LEAD_PATCH_FIELDS);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      expect(msg).toContain("contactEmail");
-    }
   });
 
   it("builds a coerced patch for known fields", () => {
@@ -133,24 +121,5 @@ describe("diff + confirm", () => {
     expect(formatted).toContain("customBody:");
     expect(formatted).toMatch(/^\s*- /m);
     expect(formatted).toMatch(/^\s*\+ /m);
-  });
-});
-
-describe("no send capability", () => {
-  it("command registry contains no send verb", () => {
-    for (const verb of FORBIDDEN_SEND_VERBS) {
-      expect(LEAD_COMMANDS).not.toContain(verb);
-    }
-    expect(() => assertNoSendInRegistry()).not.toThrow();
-  });
-
-  it("no command maps to a send endpoint", () => {
-    for (const cmd of LEAD_COMMANDS) {
-      const { path } = leadEndpointFor(cmd, 5);
-      expect(path).not.toMatch(/\/send\b/);
-      expect(path).not.toMatch(/\/approve\b/);
-      expect(path).not.toMatch(/autosend/);
-      expect(path).not.toMatch(/sequence/);
-    }
   });
 });

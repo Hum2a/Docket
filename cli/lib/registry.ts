@@ -1,17 +1,22 @@
 /**
  * Lead / settings CLI helpers.
  *
- * Intentionally has NO send capability — no /send, /approve, /autosend, or /sequence.
- * Sending stays a deliberate action in the review queue where the rendered email
- * (with footer) is visible before approval.
+ * `send` is deliberately single-lead with typed confirmation — see cli/lib/manualSend.ts.
+ * No batch / autosend / sequence from this CLI.
  */
 
-export const LEAD_COMMANDS = ["list", "get", "patch", "draft", "preflight"] as const;
+export const LEAD_COMMANDS = [
+  "list",
+  "get",
+  "patch",
+  "draft",
+  "preflight",
+  "send",
+] as const;
 export type LeadCommand = (typeof LEAD_COMMANDS)[number];
 
-/** Verbs that must never appear in the lead CLI command registry. */
-export const FORBIDDEN_SEND_VERBS = [
-  "send",
+/** Batch / cron send verbs that must not appear in the lead CLI. */
+export const FORBIDDEN_BATCH_SEND_VERBS = [
   "approve",
   "autosend",
   "sequence",
@@ -73,7 +78,7 @@ export const SETTINGS_FIELDS = [
 export function leadEndpointFor(
   command: LeadCommand,
   id?: number
-): { method: "GET" | "PATCH"; path: string } {
+): { method: "GET" | "POST" | "PATCH"; path: string } {
   switch (command) {
     case "list":
       return { method: "GET", path: "/api/leads" };
@@ -84,18 +89,23 @@ export function leadEndpointFor(
       return { method: "PATCH", path: `/api/leads/${id}` };
     case "preflight":
       return { method: "GET", path: "/api/outreach/preflight" };
+    case "send":
+      return { method: "POST", path: `/api/leads/${id}/send` };
   }
 }
 
-export function assertNoSendInRegistry(): void {
+export function assertNoBatchSendInRegistry(): void {
   for (const cmd of LEAD_COMMANDS) {
-    if ((FORBIDDEN_SEND_VERBS as readonly string[]).includes(cmd)) {
-      throw new Error(`forbidden send verb registered: ${cmd}`);
+    if ((FORBIDDEN_BATCH_SEND_VERBS as readonly string[]).includes(cmd)) {
+      throw new Error(`forbidden batch send verb registered: ${cmd}`);
     }
+  }
+  for (const cmd of LEAD_COMMANDS) {
+    if (cmd === "send") continue;
     const { path } = leadEndpointFor(cmd, 1);
-    for (const bad of ["/send", "/approve", "/autosend", "/sequence"]) {
+    for (const bad of ["/approve", "/autosend", "/sequence"]) {
       if (path.includes(bad)) {
-        throw new Error(`command ${cmd} maps to send endpoint ${path}`);
+        throw new Error(`command ${cmd} maps to batch send endpoint ${path}`);
       }
     }
   }

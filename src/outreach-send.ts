@@ -14,6 +14,7 @@ import {
   updateLead,
 } from "./outreach-db";
 import { canAutoSend, emailDomain } from "./outreach/canAutoSend";
+import { filterManualHardReasons } from "../shared/manualGate";
 import {
   absoluteFollowupAt,
   applyCustomInitialCopy,
@@ -160,11 +161,16 @@ export async function sendLeadOutreach(opts: {
   origin: string;
   /** Skip auto_send_disabled / paused / daily_cap. Does not affect dry_run. */
   force?: boolean;
+  /**
+   * Manual send from CLI/UI: like force, and also skips priority_below_threshold.
+   * Never skips PECR, freemail, suppression, verified-email, or demo-ready.
+   */
+  manual?: boolean;
   /** Only flag that allows a live Resend send while settings.dryRun is true. */
   overrideDryRun?: boolean;
   templateId?: string;
 }): Promise<SendLeadResult> {
-  const { sql, env, lead, settings, origin, force, overrideDryRun } = opts;
+  const { sql, env, lead, settings, origin, force, manual, overrideDryRun } = opts;
   const templateId = resolveTemplateId(lead.followupStep, opts.templateId);
   const todayCount = await countSentToday(sql);
   const dryRunFlag = Boolean(settings.dryRun) && !overrideDryRun;
@@ -207,13 +213,15 @@ export async function sendLeadOutreach(opts: {
     return { sent: false, dryRun: dryRunFlag, deferred: true, reasons: gate.reasons };
   }
 
-  if (force) {
+  if (force || manual) {
     const hard = canAutoSend(
       gateLead,
       { ...settingsGateInput(settings), autoSendEnabled: true, dryRun: false, pausedUntil: null },
       0
     );
-    const hardReview = hard.reasons.filter((r) => r !== "daily_cap_reached");
+    const hardReview = manual
+      ? filterManualHardReasons(hard.reasons)
+      : hard.reasons.filter((r) => r !== "daily_cap_reached");
     if (hardReview.length > 0) {
       await setLeadReviewReasons(sql, lead.id, hardReview);
       return { sent: false, dryRun: dryRunFlag, deferred: false, reasons: hardReview };

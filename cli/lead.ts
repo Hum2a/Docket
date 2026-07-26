@@ -1,8 +1,8 @@
 /**
  * Local lead editor CLI.
  *
- * No send capability by design — see cli/lib/registry.ts. Do not add send / approve /
- * autosend / sequence commands; those stay in the review queue UI.
+ * `send` is single-lead only, with a full email preview and typed confirmation.
+ * Batch / autosend / sequence are not exposed here.
  */
 
 import { createInterface } from "node:readline";
@@ -19,6 +19,14 @@ import { buildPatchFromSets } from "./lib/coerce";
 import { computeDiff, confirmApply, formatDiff } from "./lib/diff";
 import { apiRequest, ApiError } from "./lib/http";
 import { resolveApiKey } from "./lib/key";
+import {
+  confirmBusinessName,
+  formatEmailPreview,
+  formatGateResult,
+  parseSendIds,
+  refuseDryRunWithoutOverride,
+} from "./lib/manualSend";
+import { labelGateReason } from "../shared/manualGate";
 import {
   LEAD_COMMANDS,
   LEAD_PATCH_FIELDS,
@@ -37,6 +45,12 @@ type Lead = Record<string, unknown> & {
   customSubject?: string | null;
 };
 
+type Settings = {
+  fromAddress?: string | null;
+  dryRun?: boolean;
+  sendingDomain?: string | null;
+};
+
 function usage(): never {
   console.error(`Usage:
   npm run lead -- list [--status=...] [--min-priority=N] [--json]
@@ -45,13 +59,15 @@ function usage(): never {
   npm run lead -- patch <id> --set field=value [--set ...]
   npm run lead -- draft <id> --subject="..." --body-file=./draft.txt
   npm run lead -- preflight
+  npm run lead -- send <id> [--dry] [--yes] [--override-dry-run]
 
 Options:
   --base=URL   Default https://jobtracker.humza-butt.space (use http://localhost:8787 for wrangler)
-  --yes        Skip Apply? confirmation on patch/draft
+  --yes        Skip confirmation prompts (patch/draft Apply?; send typed name)
+  --dry        Preview send only — never contacts Resend
 
 API_KEY is read from .dev.vars or the environment — never pass it on the command line.
-This CLI cannot send email (no send/approve/autosend).`);
+Send is one lead per invocation (no --all / batch).`);
   process.exit(2);
 }
 
@@ -59,6 +75,16 @@ function askConfirm(): Promise<string> {
   const rl = createInterface({ input: process.stdin, output: process.stderr });
   return new Promise((resolve) => {
     rl.question("Apply? [y/N] ", (answer) => {
+      rl.close();
+      resolve(answer);
+    });
+  });
+}
+
+function askLine(prompt: string): Promise<string> {
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
+  return new Promise((resolve) => {
+    rl.question(prompt, (answer) => {
       rl.close();
       resolve(answer);
     });
@@ -143,6 +169,132 @@ async function applyPatch(opts: {
   console.log(`Updated lead ${updated.id} (${updated.businessName}).`);
 }
 
+async function runSend(opts: {
+  base: string;
+  apiKey: string;
+  argv: string[];
+  pos: string[];
+  yes: boolean;
+}): Promise<void> {
+  const parsed = parseSendIds(opts.pos);
+  if (!parsed.ok) {
+    console.error(parsed.error);
+    process.exit(2);
+  }
+  const dryOnly = hasFlag(opts.argv, "dry");
+  const overrideDryRun = hasFlag(opts.argv, "override-dry-run");
+
+  const lead = await apiRequest<Lead>({
+    base: opts.base,
+    path: `/api/leads/${parsed.id}`,
+    apiKey: opts.apiKey,
+  });
+  const settings = await apiRequest<Settings>({
+    base: opts.base,
+    path: "/api/outreach/settings",
+    apiKey: opts.apiKey,
+  });
+  const readiness = await apiRequest<{
+    ok: boolean;
+    reasons: string[];
+    labels: string[];
+    preflightReady: boolean;
+    preflightBlocking: string[];
+    dryRun: boolean;
+  }>({
+    base: opts.base,
+    path: `/api/leads/${parsed.id}/send-readiness`,
+    apiKey: opts.apiKey,
+  });
+  const preview = await apiRequest<{
+    subject: string;
+    text: string;
+    source: string;
+  }>({
+    base: opts.base,
+    path: `/api/leads/${parsed.id}/outreach-preview`,
+    apiKey: opts.apiKey,
+  });
+
+  const from = (settings.fromAddress || "").trim() || "(from-address not set)";
+  const to = (lead.contactEmail || "").trim() || "(no contact email)";
+  console.log(
+    formatEmailPreview({
+      from,
+      to,
+      subject: preview.subject,
+      text: preview.text,
+    })
+  );
+  console.log("");
+  console.log(formatGateResult(readiness.reasons));
+
+  if (!readiness.preflightReady) {
+    console.error("Preflight not ready — blocking:");
+    for (const k of readiness.preflightBlocking) {
+      console.error(`  - ${labelGateReason(k)}`);
+    }
+    process.exit(1);
+  }
+
+  if (readiness.reasons.length > 0) {
+    console.error("Hard gate failed — not sending.");
+    process.exit(1);
+  }
+
+  const dryRefuse = refuseDryRunWithoutOverride(
+    Boolean(settings.dryRun),
+    overrideDryRun,
+    dryOnly
+  );
+  if (dryRefuse) {
+    console.error(dryRefuse);
+    process.exit(1);
+  }
+
+  if (dryOnly) {
+    console.log("\n--dry: preview only, Resend not contacted.");
+    return;
+  }
+
+  if (!opts.yes) {
+    const typed = await askLine("Type the business name to send: ");
+    if (!confirmBusinessName(typed, String(lead.businessName ?? ""))) {
+      console.error("Aborted — business name did not match.");
+      process.exit(1);
+    }
+  }
+
+  const result = await apiRequest<{
+    sent: boolean;
+    dryRun: boolean;
+    reasons: string[];
+    messageId?: number;
+  }>({
+    base: opts.base,
+    path: `/api/leads/${parsed.id}/send`,
+    method: "POST",
+    apiKey: opts.apiKey,
+    body: { manual: true, overrideDryRun },
+  });
+
+  const fresh = await apiRequest<Lead>({
+    base: opts.base,
+    path: `/api/leads/${parsed.id}`,
+    apiKey: opts.apiKey,
+  });
+
+  if (!result.sent && !result.dryRun) {
+    console.error(`Send failed: ${(result.reasons || []).join(", ")}`);
+    process.exit(1);
+  }
+  console.log(
+    result.dryRun
+      ? `Queued dry-run message id=${result.messageId ?? "?"} · lead status=${fresh.status}`
+      : `Sent message id=${result.messageId ?? "?"} · lead status=${fresh.status}`
+  );
+}
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   if (hasFlag(argv, "help") || argv.includes("-h")) usage();
@@ -217,6 +369,11 @@ async function main(): Promise<void> {
       }
       console.log(`blocking: ${pf.blocking.length ? pf.blocking.join(", ") : "(none)"}`);
       console.log(`warnings: ${pf.warnings?.length ? pf.warnings.join(", ") : "(none)"}`);
+      return;
+    }
+
+    if (command === "send") {
+      await runSend({ base, apiKey, argv, pos, yes });
       return;
     }
 

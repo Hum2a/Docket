@@ -300,11 +300,21 @@ export const api = {
     request<{ ok: boolean }>(`/api/lead-reminders/${id}`, { method: "DELETE", auth: true }),
 
   listLeadMessages: (id: number) => request<LeadMessage[]>(`/api/leads/${id}/messages`),
-  sendLead: (id: number) =>
-    request<{ ok: boolean; dryRun?: boolean; reasons?: string[]; error?: string }>(
+  sendLead: (id: number, body?: { manual?: boolean; overrideDryRun?: boolean }) =>
+    request<{ ok?: boolean; sent?: boolean; dryRun?: boolean; reasons?: string[]; error?: string; messageId?: number }>(
       `/api/leads/${id}/send`,
-      { method: "POST", auth: true }
+      { method: "POST", auth: true, body: JSON.stringify(body ?? { manual: true }) }
     ),
+  getSendReadiness: (id: number) =>
+    request<{
+      ok: boolean;
+      reasons: string[];
+      labels: string[];
+      preflightReady: boolean;
+      preflightBlocking: string[];
+      dryRun: boolean;
+      blocking: string[];
+    }>(`/api/leads/${id}/send-readiness`, { auth: true }),
   approveLead: (id: number) =>
     request<{ approved: boolean; ok?: boolean; dryRun?: boolean; reasons?: string[] }>(
       `/api/leads/${id}/approve`,

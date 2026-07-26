@@ -1,25 +1,12 @@
-/** Freemail / consumer mailbox domains — not valid for PECR corporate auto-send. */
-export const FREEMAIL_DOMAINS = new Set([
-  "gmail.com",
-  "googlemail.com",
-  "hotmail.com",
-  "outlook.com",
-  "live.com",
-  "msn.com",
-  "yahoo.com",
-  "yahoo.co.uk",
-  "icloud.com",
-  "me.com",
-  "mac.com",
-  "aol.com",
-  "protonmail.com",
-  "proton.me",
-  "btinternet.com",
-  "sky.com",
-  "mail.com",
-  "gmx.com",
-  "gmx.co.uk",
-]);
+/** PECR corporate auto-send gate. Freemail helpers live in shared/freemail.ts. */
+
+export {
+  FREEMAIL_DOMAINS,
+  emailDomain,
+  isFreemail,
+} from "../../shared/freemail";
+
+import { isFreemail } from "../../shared/freemail";
 
 export type LeadGateInput = {
   priorityScore: number | null;
@@ -46,17 +33,6 @@ export type AutoSendResult = {
   deferred: boolean;
   reasons: string[];
 };
-
-export function emailDomain(email: string): string | null {
-  const at = email.trim().toLowerCase().lastIndexOf("@");
-  if (at < 0) return null;
-  return email.trim().toLowerCase().slice(at + 1);
-}
-
-export function isFreemail(email: string): boolean {
-  const domain = emailDomain(email);
-  return Boolean(domain && FREEMAIL_DOMAINS.has(domain));
-}
 
 /**
  * PECR (UK): unsolicited marketing email may be sent to corporate subscribers
@@ -144,7 +120,6 @@ export function canAutoSend(
       ].includes(r)
   );
 
-  // Deferred-only failures (1,2,9) → deferred; mix with review → still not ok
   const ok = reasons.length === 0;
   if (!ok && reviewReasons.length === 0) {
     deferred = true;

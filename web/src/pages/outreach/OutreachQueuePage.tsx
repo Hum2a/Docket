@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import type { Lead } from "@shared/outreach";
 import { api } from "../../lib/api";
 import { outreachStatusLabel } from "../../lib/mode";
+import { ContactRouteChip } from "../../components/ContactRouteChip";
+import { SendEmailButton } from "../../components/SendEmailButton";
 import { blockingTooltip, useOutreachPreflight } from "../../lib/useOutreachPreflight";
 
 type Preview = {
@@ -123,9 +125,12 @@ export function OutreachQueuePage() {
                   <Link to={`/outreach/leads/${l.id}`}>
                     <strong>{l.businessName}</strong>
                   </Link>
-                  <div className="meta">
-                    {l.contactEmail || "no email"} · {outreachStatusLabel(l.status)} · priority{" "}
-                    {l.priorityScore?.toFixed(1) ?? "—"}
+                  <div className="meta" style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+                    <ContactRouteChip route={l.contactRoute} />
+                    <span>
+                      {l.contactEmail || "no email"} · {outreachStatusLabel(l.status)} · priority{" "}
+                      {l.priorityScore?.toFixed(1) ?? "—"}
+                    </span>
                   </div>
                   {l.reviewReasons.length > 0 ? (
                     <ul className="reason-list" style={{ marginTop: "0.5rem" }}>
@@ -140,9 +145,10 @@ export function OutreachQueuePage() {
                   )}
                 </div>
                 <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
+                  <SendEmailButton lead={l} onDone={() => void load()} />
                   <button
                     type="button"
-                    className="btn"
+                    className="btn btn-ghost"
                     disabled={busyId === l.id || !ready}
                     title={sendBlockedTitle}
                     onClick={() => void approve(l.id)}

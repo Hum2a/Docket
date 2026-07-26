@@ -4,6 +4,7 @@ import type { Lead, LeadStatus } from "@shared/outreach";
 import { LEAD_STATUSES } from "@shared/outreach";
 import { api } from "../../lib/api";
 import { LeadStatusSelect } from "../../components/LeadStatusSelect";
+import { ContactRouteChip } from "../../components/ContactRouteChip";
 import { outreachStatusLabel } from "../../lib/mode";
 
 type SortKey =
@@ -29,6 +30,7 @@ export function OutreachListPage() {
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
   const [industry, setIndustry] = useState("");
+  const [contactRouteFilter, setContactRouteFilter] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("priorityScore");
   const [sortDir, setSortDir] = useState<-1 | 1>(-1);
   const [deleting, setDeleting] = useState<number | null>(null);
@@ -83,6 +85,7 @@ export function OutreachListPage() {
       if (pipelineMode && !PIPELINE_STATUSES.includes(r.status)) return false;
       if (status && r.status !== status) return false;
       if (industry && r.industry !== industry) return false;
+      if (contactRouteFilter && r.contactRoute !== contactRouteFilter) return false;
       if (query) {
         const hay = [
           r.businessName,
@@ -111,7 +114,7 @@ export function OutreachListPage() {
       return 0;
     });
     return list;
-  }, [leads, q, status, industry, sortKey, sortDir, pipelineMode]);
+  }, [leads, q, status, industry, contactRouteFilter, sortKey, sortDir, pipelineMode]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) setSortDir((d) => (d === 1 ? -1 : 1));
@@ -200,6 +203,14 @@ export function OutreachListPage() {
             </option>
           ))}
         </select>
+        <select value={contactRouteFilter} onChange={(e) => setContactRouteFilter(e.target.value)}>
+          <option value="">All contact routes</option>
+          <option value="email">Email</option>
+          <option value="freemail">Freemail</option>
+          <option value="phone">Phone</option>
+          <option value="form">Form</option>
+          <option value="none">No contact</option>
+        </select>
       </div>
 
       <div className="panel table-wrap">
@@ -207,6 +218,7 @@ export function OutreachListPage() {
           <thead>
             <tr>
               {th("businessName", "Business")}
+              <th>Contact</th>
               {th("industry", "Industry")}
               {th("location", "Location")}
               {th("status", "Status")}
@@ -220,6 +232,9 @@ export function OutreachListPage() {
               <tr key={l.id}>
                 <td>
                   <Link to={`/outreach/leads/${l.id}`}>{l.businessName}</Link>
+                </td>
+                <td>
+                  <ContactRouteChip route={l.contactRoute} />
                 </td>
                 <td>{l.industry || "—"}</td>
                 <td>{l.location || l.postcode || "—"}</td>

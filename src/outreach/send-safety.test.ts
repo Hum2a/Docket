@@ -100,6 +100,7 @@ function baseLead(over: Partial<Lead> = {}): Lead {
     customSubject: null,
     customBody: null,
     draftUpdatedAt: null,
+    contactRoute: "email",
     ...over,
   };
 }
@@ -468,5 +469,73 @@ describe("sendLeadOutreach fail-closed", () => {
     );
     const body = String(insertLeadMessage.mock.calls[0]?.[1]?.body ?? "");
     expect(body).toContain("The demo's still up");
+  });
+
+  it("manual:true skips priority but not PECR / freemail / suppression / demo", async () => {
+    const lowPri = await sendLeadOutreach({
+      sql,
+      env: baseEnv(),
+      lead: baseLead({ priorityScore: 1 }),
+      settings: baseSettings({ autoSendThreshold: 8, dryRun: true }),
+      origin: "https://example.com",
+      force: true,
+      manual: true,
+    });
+    expect(lowPri.reasons).not.toContain("priority_below_threshold");
+    expect(lowPri.dryRun).toBe(true);
+    expect(insertLeadMessage).toHaveBeenCalled();
+
+    insertLeadMessage.mockClear();
+    const sole = await sendLeadOutreach({
+      sql,
+      env: baseEnv(),
+      lead: baseLead({ corporateSubscriber: false, priorityScore: 1 }),
+      settings: baseSettings({ dryRun: true }),
+      origin: "https://example.com",
+      force: true,
+      manual: true,
+    });
+    expect(sole.reasons).toContain("not_corporate_subscriber");
+    expect(insertLeadMessage).not.toHaveBeenCalled();
+
+    const freemail = await sendLeadOutreach({
+      sql,
+      env: baseEnv(),
+      lead: baseLead({ contactEmail: "a@gmail.com", priorityScore: 1 }),
+      settings: baseSettings({ dryRun: true }),
+      origin: "https://example.com",
+      force: true,
+      manual: true,
+    });
+    expect(freemail.reasons).toContain("freemail_address");
+
+    const suppressed = await sendLeadOutreach({
+      sql,
+      env: baseEnv(),
+      lead: baseLead({ suppressed: true, priorityScore: 1 }),
+      settings: baseSettings({ dryRun: true }),
+      origin: "https://example.com",
+      force: true,
+      manual: true,
+    });
+    expect(suppressed.reasons).toContain("lead_suppressed");
+
+    const noDemo = await sendLeadOutreach({
+      sql,
+      env: baseEnv(),
+      lead: baseLead({
+        demoStatus: "none",
+        demoUrl: null,
+        status: "qualified",
+        priorityScore: 1,
+      }),
+      settings: baseSettings({ dryRun: true }),
+      origin: "https://example.com",
+      force: true,
+      manual: true,
+    });
+    expect(noDemo.reasons).toEqual(
+      expect.arrayContaining(["demo_not_ready", "status_not_sendable"])
+    );
   });
 });

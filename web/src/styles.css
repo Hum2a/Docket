@@ -948,3 +948,53 @@ table.data .status-select {
 .deliverability-banner {
   margin-bottom: 1rem;
 }
+
+.contact-route {
+  display: inline-block;
+  padding: 0.12rem 0.45rem;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+.contact-route-email {
+  background: #d8f3dc;
+  color: #0f6e56;
+}
+.contact-route-freemail {
+  background: #fde8c8;
+  color: #8a4b08;
+}
+.contact-route-phone {
+  background: #dbeafe;
+  color: #1e40af;
+}
+.contact-route-form {
+  background: #e8eef5;
+  color: #3d4f66;
+}
+.contact-route-none {
+  background: #fde2e1;
+  color: #a32d2d;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 32, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 80;
+  padding: 1rem;
+}
+.modal-panel {
+  background: #fff;
+  border-radius: 12px;
+  padding: 1.25rem;
+  max-width: 640px;
+  width: 100%;
+  max-height: 90vh;
+  overflow: auto;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+}

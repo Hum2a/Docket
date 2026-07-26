@@ -2,6 +2,7 @@ import type { Sql } from "./db";
 import { toDateOnly } from "./db";
 import type { CreateLead, Lead, LeadStatus, OutreachSettings, UpdateLead } from "../shared/outreach";
 import { demoExpiresAtFrom, slugifyName } from "../shared/outreach";
+import { contactRoute } from "../shared/contactRoute";
 import { normalizeBusinessKey, planBulkUpserts } from "./outreach/bulkUpsert";
 import { canAutoSend } from "./outreach/canAutoSend";
 import {
@@ -80,6 +81,11 @@ function mapLead(row: LeadRow): Lead {
     customSubject: (row.custom_subject as string) ?? null,
     customBody: (row.custom_body as string) ?? null,
     draftUpdatedAt: row.draft_updated_at ? String(row.draft_updated_at) : null,
+    contactRoute: contactRoute({
+      contactEmail: (row.contact_email as string) ?? null,
+      contactPhone: (row.contact_phone as string) ?? null,
+      contactFormUrl: (row.contact_form_url as string) ?? null,
+    }),
   };
 }
 
