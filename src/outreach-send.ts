@@ -9,9 +9,11 @@ import {
   insertLeadMessage,
   isSuppressed,
   leadGateInput,
+  MAX_MESSAGE_SEND_ATTEMPTS,
   setLeadReviewReasons,
   settingsGateInput,
   updateLead,
+  updateLeadMessageAttempt,
 } from "./outreach-db";
 import { canAutoSend, emailDomain } from "./outreach/canAutoSend";
 import { filterManualHardReasons } from "../shared/manualGate";
@@ -288,14 +290,40 @@ export async function sendLeadOutreach(opts: {
 
   const idempotencyKey = await makeIdempotencyKey(lead.id, messageTemplateId, step);
   const existing = await getLeadMessageByIdempotency(sql, idempotencyKey);
+  /** When set, persist via UPDATE in place (failed/queued retry) rather than INSERT. */
+  let retryMessageId: number | null = null;
   if (existing) {
-    return {
-      sent: existing.status === "sent" || existing.status === "delivered",
-      dryRun: dryRunFlag,
-      deferred: false,
-      reasons: ["idempotent_replay"],
-      messageId: Number(existing.id),
-    };
+    const status = existing.status;
+    const blocking = ["sent", "delivered", "bounced", "complained"].includes(status);
+    if (blocking) {
+      return {
+        sent: status === "sent" || status === "delivered",
+        dryRun: dryRunFlag,
+        deferred: false,
+        reasons: ["already_sent"],
+        messageId: existing.id,
+      };
+    }
+    if (status === "failed" || status === "queued") {
+      if (existing.attempts >= MAX_MESSAGE_SEND_ATTEMPTS) {
+        return {
+          sent: false,
+          dryRun: dryRunFlag,
+          deferred: false,
+          reasons: ["too_many_attempts"],
+          messageId: existing.id,
+        };
+      }
+      retryMessageId = existing.id;
+    } else {
+      return {
+        sent: false,
+        dryRun: dryRunFlag,
+        deferred: false,
+        reasons: ["already_sent"],
+        messageId: existing.id,
+      };
+    }
   }
 
   const replyTo = settings.replyTo || env.OUTREACH_REPLY_TO || undefined;
@@ -328,17 +356,45 @@ export async function sendLeadOutreach(opts: {
     await updateLead(sql, lead.id, { audit });
   }
 
-  if (dryRunFlag) {
-    await persistAuditOnInitial();
-    const row = await insertLeadMessage(sql, {
+  async function persistOutbound(input: {
+    subject: string;
+    body: string;
+    templateId: string;
+    variant: string | null | undefined;
+    providerMessageId?: string | null;
+    status: string;
+    sentAt?: string | null;
+    error?: string | null;
+  }) {
+    const payload = {
+      subject: input.subject,
+      body: input.body,
+      templateId: input.templateId,
+      variant: input.variant ?? null,
+      providerMessageId: input.providerMessageId ?? null,
+      status: input.status,
+      sentAt: input.sentAt ?? null,
+      error: input.error ?? null,
+    };
+    if (retryMessageId != null) {
+      return updateLeadMessageAttempt(sql, retryMessageId, payload);
+    }
+    return insertLeadMessage(sql, {
       leadId: lead.id,
       direction: "out",
       channel: "email",
+      idempotencyKey,
+      ...payload,
+    });
+  }
+
+  if (dryRunFlag) {
+    await persistAuditOnInitial();
+    const row = await persistOutbound({
       subject,
       body: text,
       templateId: messageTemplateId,
       variant: rendered.variant,
-      idempotencyKey,
       status: "queued",
     });
     return {
@@ -346,7 +402,7 @@ export async function sendLeadOutreach(opts: {
       dryRun: true,
       deferred: false,
       reasons: ["dry_run"],
-      messageId: Number(row.id),
+      messageId: row.id,
     };
   }
 
@@ -362,15 +418,11 @@ export async function sendLeadOutreach(opts: {
   });
 
   if (!result.sent) {
-    const row = await insertLeadMessage(sql, {
-      leadId: lead.id,
-      direction: "out",
-      channel: "email",
+    const row = await persistOutbound({
       subject,
       body: text,
       templateId: messageTemplateId,
       variant: rendered.variant,
-      idempotencyKey,
       status: "failed",
       error: result.reason ?? "send_failed",
     });
@@ -379,24 +431,21 @@ export async function sendLeadOutreach(opts: {
       dryRun: false,
       deferred: false,
       reasons: [result.reason ?? "send_failed"],
-      messageId: Number(row.id),
+      messageId: row.id,
     };
   }
 
   await persistAuditOnInitial();
 
-  const row = await insertLeadMessage(sql, {
-    leadId: lead.id,
-    direction: "out",
-    channel: "email",
+  const row = await persistOutbound({
     subject,
     body: text,
     templateId: messageTemplateId,
     variant: rendered.variant,
     providerMessageId: result.id ?? null,
-    idempotencyKey,
     status: "sent",
     sentAt: new Date().toISOString(),
+    error: null,
   });
 
   const offsets = settings.followupOffsetsDays.length ? settings.followupOffsetsDays : [3, 7];

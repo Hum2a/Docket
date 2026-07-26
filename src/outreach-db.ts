@@ -656,11 +656,32 @@ export async function cancelLeadFollowupReminders(sql: Sql, leadId: number): Pro
   `;
 }
 
-export async function listLeadMessages(sql: Sql, leadId: number) {
-  const rows = (await sql`
-    SELECT * FROM lead_messages WHERE lead_id = ${leadId} ORDER BY created_at ASC
-  `) as LeadRow[];
-  return rows.map((r) => ({
+export type LeadMessageRow = {
+  id: number;
+  leadId: number;
+  direction: string;
+  channel: string;
+  subject: string | null;
+  body: string | null;
+  templateId: string | null;
+  variant: string | null;
+  providerMessageId: string | null;
+  idempotencyKey: string | null;
+  status: string;
+  sentAt: string | null;
+  deliveredAt: string | null;
+  openedAt: string | null;
+  error: string | null;
+  createdAt: string;
+  attempts: number;
+  lastAttemptAt: string | null;
+};
+
+/** Cap on retries for the same idempotency key (failed/queued). */
+export const MAX_MESSAGE_SEND_ATTEMPTS = 5;
+
+function mapLeadMessage(r: LeadRow): LeadMessageRow {
+  return {
     id: Number(r.id),
     leadId: Number(r.lead_id),
     direction: String(r.direction),
@@ -677,7 +698,16 @@ export async function listLeadMessages(sql: Sql, leadId: number) {
     openedAt: r.opened_at ? String(r.opened_at) : null,
     error: (r.error as string) ?? null,
     createdAt: String(r.created_at),
-  }));
+    attempts: Number(r.attempts ?? 1),
+    lastAttemptAt: r.last_attempt_at ? String(r.last_attempt_at) : null,
+  };
+}
+
+export async function listLeadMessages(sql: Sql, leadId: number) {
+  const rows = (await sql`
+    SELECT * FROM lead_messages WHERE lead_id = ${leadId} ORDER BY created_at ASC
+  `) as LeadRow[];
+  return rows.map(mapLeadMessage);
 }
 
 export type OutreachMessageListItem = {
@@ -928,11 +958,14 @@ export async function getInitialOutboundProviderId(
   return rows[0]?.provider_message_id ?? null;
 }
 
-export async function getLeadMessageByIdempotency(sql: Sql, key: string) {
+export async function getLeadMessageByIdempotency(
+  sql: Sql,
+  key: string
+): Promise<LeadMessageRow | null> {
   const rows = (await sql`
     SELECT * FROM lead_messages WHERE idempotency_key = ${key} LIMIT 1
   `) as LeadRow[];
-  return rows[0] ?? null;
+  return rows[0] ? mapLeadMessage(rows[0]) : null;
 }
 
 export async function insertLeadMessage(
@@ -951,20 +984,56 @@ export async function insertLeadMessage(
     sentAt?: string | null;
     error?: string | null;
   }
-) {
+): Promise<LeadMessageRow> {
   const rows = (await sql`
     INSERT INTO lead_messages (
       lead_id, direction, channel, subject, body, template_id, variant,
-      provider_message_id, idempotency_key, status, sent_at, error
+      provider_message_id, idempotency_key, status, sent_at, error,
+      attempts, last_attempt_at
     ) VALUES (
       ${input.leadId}, ${input.direction}, ${input.channel}, ${input.subject ?? null},
       ${input.body ?? null}, ${input.templateId ?? null}, ${input.variant ?? null},
       ${input.providerMessageId ?? null}, ${input.idempotencyKey ?? null}, ${input.status},
-      ${input.sentAt ?? null}, ${input.error ?? null}
+      ${input.sentAt ?? null}, ${input.error ?? null},
+      1, now()
     )
     RETURNING *
   `) as LeadRow[];
-  return rows[0];
+  return mapLeadMessage(rows[0]!);
+}
+
+/** Update an existing message in place on retry (unique idempotency_key). */
+export async function updateLeadMessageAttempt(
+  sql: Sql,
+  id: number,
+  input: {
+    subject?: string | null;
+    body?: string | null;
+    templateId?: string | null;
+    variant?: string | null;
+    providerMessageId?: string | null;
+    status: string;
+    sentAt?: string | null;
+    error?: string | null;
+  }
+): Promise<LeadMessageRow> {
+  const rows = (await sql`
+    UPDATE lead_messages SET
+      subject = ${input.subject ?? null},
+      body = ${input.body ?? null},
+      template_id = ${input.templateId ?? null},
+      variant = ${input.variant ?? null},
+      provider_message_id = ${input.providerMessageId ?? null},
+      status = ${input.status},
+      sent_at = ${input.sentAt ?? null},
+      error = ${input.error ?? null},
+      attempts = attempts + 1,
+      last_attempt_at = now()
+    WHERE id = ${id}
+    RETURNING *
+  `) as LeadRow[];
+  if (!rows[0]) throw new Error(`lead_messages ${id} not found for retry`);
+  return mapLeadMessage(rows[0]);
 }
 
 export async function findLeadByEmail(sql: Sql, email: string): Promise<Lead | null> {

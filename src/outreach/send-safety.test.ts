@@ -3,6 +3,7 @@ import type { Lead, OutreachSettings } from "../../shared/outreach";
 import type { Env } from "../schema";
 
 const insertLeadMessage = vi.fn();
+const updateLeadMessageAttempt = vi.fn();
 const setLeadReviewReasons = vi.fn();
 const countSentToday = vi.fn();
 const getLeadMessageByIdempotency = vi.fn();
@@ -17,6 +18,8 @@ vi.mock("../outreach-db", () => ({
   getInitialOutboundProviderId: async () => null,
   getLeadMessageByIdempotency: (...args: unknown[]) => getLeadMessageByIdempotency(...args),
   insertLeadMessage: (...args: unknown[]) => insertLeadMessage(...args),
+  updateLeadMessageAttempt: (...args: unknown[]) => updateLeadMessageAttempt(...args),
+  MAX_MESSAGE_SEND_ATTEMPTS: 5,
   isSuppressed: (...args: unknown[]) => isSuppressed(...args),
   leadGateInput: (lead: Lead) => ({
     priorityScore: lead.priorityScore,
@@ -175,6 +178,7 @@ describe("sendLeadOutreach fail-closed", () => {
     isSuppressed.mockResolvedValue(false);
     getLeadMessageByIdempotency.mockResolvedValue(null);
     insertLeadMessage.mockResolvedValue({ id: 99 });
+    updateLeadMessageAttempt.mockResolvedValue({ id: 99, attempts: 2 });
     setLeadReviewReasons.mockResolvedValue(undefined);
     updateLead.mockResolvedValue(null);
     createLeadReminder.mockResolvedValue(null);
@@ -537,5 +541,178 @@ describe("sendLeadOutreach fail-closed", () => {
     expect(noDemo.reasons).toEqual(
       expect.arrayContaining(["demo_not_ready", "status_not_sendable"])
     );
+  });
+});
+
+describe("sendLeadOutreach idempotency / retry", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    countSentToday.mockResolvedValue(0);
+    isSuppressed.mockResolvedValue(false);
+    getLeadMessageByIdempotency.mockResolvedValue(null);
+    insertLeadMessage.mockResolvedValue({ id: 99, attempts: 1 });
+    updateLeadMessageAttempt.mockResolvedValue({ id: 42, attempts: 2, status: "sent" });
+    setLeadReviewReasons.mockResolvedValue(undefined);
+    updateLead.mockResolvedValue(null);
+    createLeadReminder.mockResolvedValue(null);
+    sendResendEmail.mockResolvedValue({ sent: true, id: "re_abc" });
+  });
+
+  it("existing sent row blocks with already_sent and does not call Resend", async () => {
+    getLeadMessageByIdempotency.mockResolvedValue({
+      id: 10,
+      status: "sent",
+      attempts: 1,
+    });
+    const result = await sendLeadOutreach({
+      sql,
+      env: baseEnv(),
+      lead: baseLead(),
+      settings: baseSettings({ dryRun: false }),
+      origin: "https://example.com",
+      force: true,
+    });
+    expect(result.reasons).toEqual(["already_sent"]);
+    expect(result.sent).toBe(true);
+    expect(sendResendEmail).not.toHaveBeenCalled();
+    expect(insertLeadMessage).not.toHaveBeenCalled();
+    expect(updateLeadMessageAttempt).not.toHaveBeenCalled();
+  });
+
+  it("existing bounced row blocks — must not re-send to a bounced address", async () => {
+    getLeadMessageByIdempotency.mockResolvedValue({
+      id: 11,
+      status: "bounced",
+      attempts: 1,
+    });
+    const result = await sendLeadOutreach({
+      sql,
+      env: baseEnv(),
+      lead: baseLead(),
+      settings: baseSettings({ dryRun: false }),
+      origin: "https://example.com",
+      force: true,
+    });
+    expect(result.reasons).toEqual(["already_sent"]);
+    expect(result.sent).toBe(false);
+    expect(sendResendEmail).not.toHaveBeenCalled();
+    expect(insertLeadMessage).not.toHaveBeenCalled();
+    expect(updateLeadMessageAttempt).not.toHaveBeenCalled();
+  });
+
+  it("existing failed row retries in place and increments attempts", async () => {
+    getLeadMessageByIdempotency.mockResolvedValue({
+      id: 42,
+      status: "failed",
+      attempts: 1,
+      error: "domain_not_verified",
+    });
+    updateLeadMessageAttempt.mockResolvedValue({
+      id: 42,
+      attempts: 2,
+      status: "sent",
+    });
+
+    const result = await sendLeadOutreach({
+      sql,
+      env: baseEnv(),
+      lead: baseLead(),
+      settings: baseSettings({ dryRun: false }),
+      origin: "https://example.com",
+      force: true,
+    });
+
+    expect(result.sent).toBe(true);
+    expect(result.messageId).toBe(42);
+    expect(sendResendEmail).toHaveBeenCalled();
+    expect(insertLeadMessage).not.toHaveBeenCalled();
+    expect(updateLeadMessageAttempt).toHaveBeenCalledWith(
+      expect.anything(),
+      42,
+      expect.objectContaining({
+        status: "sent",
+        error: null,
+        providerMessageId: "re_abc",
+      })
+    );
+  });
+
+  it("queued dry-run row is superseded in place with no second row", async () => {
+    getLeadMessageByIdempotency.mockResolvedValue({
+      id: 55,
+      status: "queued",
+      attempts: 1,
+    });
+    updateLeadMessageAttempt.mockResolvedValue({
+      id: 55,
+      attempts: 2,
+      status: "sent",
+    });
+
+    const result = await sendLeadOutreach({
+      sql,
+      env: baseEnv(),
+      lead: baseLead(),
+      settings: baseSettings({ dryRun: true }),
+      origin: "https://example.com",
+      force: true,
+      overrideDryRun: true,
+    });
+
+    expect(result.sent).toBe(true);
+    expect(insertLeadMessage).not.toHaveBeenCalled();
+    expect(updateLeadMessageAttempt).toHaveBeenCalledWith(
+      expect.anything(),
+      55,
+      expect.objectContaining({ status: "sent" })
+    );
+  });
+
+  it("attempts at or above 5 returns too_many_attempts", async () => {
+    getLeadMessageByIdempotency.mockResolvedValue({
+      id: 77,
+      status: "failed",
+      attempts: 5,
+    });
+    const result = await sendLeadOutreach({
+      sql,
+      env: baseEnv(),
+      lead: baseLead(),
+      settings: baseSettings({ dryRun: false }),
+      origin: "https://example.com",
+      force: true,
+    });
+    expect(result.reasons).toEqual(["too_many_attempts"]);
+    expect(sendResendEmail).not.toHaveBeenCalled();
+    expect(insertLeadMessage).not.toHaveBeenCalled();
+    expect(updateLeadMessageAttempt).not.toHaveBeenCalled();
+  });
+
+  it("failed retry that fails again updates the same row (no insert)", async () => {
+    getLeadMessageByIdempotency.mockResolvedValue({
+      id: 42,
+      status: "failed",
+      attempts: 2,
+    });
+    sendResendEmail.mockResolvedValue({ sent: false, reason: "rate_limited" });
+    updateLeadMessageAttempt.mockResolvedValue({
+      id: 42,
+      attempts: 3,
+      status: "failed",
+    });
+
+    const result = await sendLeadOutreach({
+      sql,
+      env: baseEnv(),
+      lead: baseLead(),
+      settings: baseSettings({ dryRun: false }),
+      origin: "https://example.com",
+      force: true,
+    });
+
+    expect(result.sent).toBe(false);
+    expect(result.reasons).toContain("rate_limited");
+    expect(insertLeadMessage).not.toHaveBeenCalled();
+    expect(updateLeadMessageAttempt).toHaveBeenCalledTimes(1);
   });
 });

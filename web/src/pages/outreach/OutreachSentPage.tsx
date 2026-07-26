@@ -98,6 +98,7 @@ export function OutreachSentPage() {
 
   const bounceN = analytics?.totals.bounced ?? 0;
   const complainN = analytics?.totals.complained ?? 0;
+  const failedN = analytics?.totals.failed ?? 0;
 
   return (
     <div className="page-enter">
@@ -108,10 +109,14 @@ export function OutreachSentPage() {
 
       {error && <div className="error-banner">{error}</div>}
 
-      {(bounceN > 0 || complainN > 0) && (
+      {(bounceN > 0 || complainN > 0 || failedN > 0) && (
         <div className="error-banner deliverability-banner" role="alert">
           Deliverability alert: {bounceN} bounce{bounceN === 1 ? "" : "s"}, {complainN} complaint
-          {complainN === 1 ? "" : "s"}. On a new sending domain these matter more than reply rate.
+          {complainN === 1 ? "" : "s"}
+          {failedN > 0
+            ? `, ${failedN} failed send${failedN === 1 ? "" : "s"}`
+            : ""}
+          . On a new sending domain these matter more than reply rate.
         </div>
       )}
 

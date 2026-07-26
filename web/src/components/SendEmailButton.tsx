@@ -18,9 +18,12 @@ type Preview = {
 export function SendEmailButton({
   lead,
   onDone,
+  buttonLabel,
 }: {
   lead: Lead;
   onDone?: () => void;
+  /** Override the default Send email / Send follow-up label (e.g. Retry send). */
+  buttonLabel?: string;
 }) {
   const [readiness, setReadiness] = useState<Readiness | null>(null);
   const [open, setOpen] = useState(false);
@@ -92,11 +95,9 @@ export function SendEmailButton({
     }
   }
 
-  const label = dryRun
-    ? "Send (dry run)"
-    : alreadySent
-      ? "Send follow-up"
-      : "Send email";
+  const label =
+    buttonLabel ??
+    (dryRun ? "Send (dry run)" : alreadySent ? "Send follow-up" : "Send email");
 
   return (
     <>

@@ -350,6 +350,10 @@ export function OutreachDetailPage() {
   if (!lead && !error) return <p className="muted page-enter">Loading…</p>;
   if (!lead) return <div className="error-banner">{error}</div>;
 
+  const latestFailedOut = [...messages]
+    .reverse()
+    .find((m) => m.direction === "out" && m.status === "failed");
+
   return (
     <div className="page-enter detail-page">
       <div className="page-head">
@@ -397,6 +401,20 @@ export function OutreachDetailPage() {
           </button>
         </div>
       </div>
+
+      {latestFailedOut && (
+        <div className="error-banner" role="alert" style={{ marginBottom: "1rem" }}>
+          <div style={{ marginBottom: "0.5rem" }}>
+            Last send failed
+            {latestFailedOut.error ? `: ${latestFailedOut.error}` : "."}
+          </div>
+          <SendEmailButton
+            lead={lead}
+            buttonLabel="Retry send"
+            onDone={() => void load()}
+          />
+        </div>
+      )}
 
       {error && <div className="error-banner">{error}</div>}
       {flash && <div className="success-banner">{flash}</div>}
@@ -594,6 +612,11 @@ export function OutreachDetailPage() {
                     <div className="meta">{m.createdAt.slice(0, 19)}</div>
                     {m.subject && <div>{m.subject}</div>}
                     <div className="meta">{m.body?.slice(0, 200)}</div>
+                    {m.status === "failed" && m.error && (
+                      <div className="error-banner" style={{ marginTop: "0.35rem" }}>
+                        {m.error}
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
