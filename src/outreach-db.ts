@@ -524,7 +524,13 @@ export async function bulkUpsertLeads(
         if (lead) updated.push(lead.id);
       }
     } catch (e) {
-      errors.push(e instanceof Error ? e.message : String(e));
+      const ref =
+        (plan.incoming as CreateLead).sourceRef ||
+        (plan.incoming as { source_ref?: string }).source_ref ||
+        (plan.incoming as CreateLead).businessName ||
+        "unknown";
+      const msg = e instanceof Error ? e.message : String(e);
+      errors.push(`${ref}: ${msg}`);
     }
   }
 
