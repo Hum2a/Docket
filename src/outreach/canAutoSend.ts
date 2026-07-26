@@ -7,6 +7,10 @@ export {
 } from "../../shared/freemail";
 
 import { isFreemail } from "../../shared/freemail";
+import {
+  isBusinessNameDomain,
+  isValidUkPostalAddress,
+} from "./qualityGate";
 
 export type LeadGateInput = {
   priorityScore: number | null;
@@ -17,6 +21,22 @@ export type LeadGateInput = {
   demoStatus: string;
   demoUrl: string | null;
   status: string;
+  /** Trading name — domain-shaped names are blocked. */
+  businessName?: string | null;
+  /** Resolved observation signal from pickObservation (null = missing). */
+  observationSignal?: string | null;
+  /** Industry slug; null is fine when templates omit the trade phrase. */
+  industry?: string | null;
+  /**
+   * When true, a null/empty industry blocks with industry_unknown.
+   * Current initial/followup/final templates fall back to "local businesses" — leave false.
+   */
+  templateRequiresIndustry?: boolean;
+  /**
+   * Resolved postal address (settings/env). When set but invalid → postal_address_invalid.
+   * Omit / null when not yet resolved (caller handles postal_address_not_configured).
+   */
+  postalAddress?: string | null;
 };
 
 export type OutreachSettingsGateInput = {
@@ -108,6 +128,24 @@ export function canAutoSend(
   if (todaySentCount >= settings.dailySendCap) {
     reasons.push("daily_cap_reached");
     deferred = true;
+  }
+
+  // 10 — quality hard blocks (manual/force must not skip these)
+  if (isBusinessNameDomain(lead.businessName)) {
+    reasons.push("business_name_is_domain");
+  }
+  if (lead.observationSignal === "generic") {
+    reasons.push("generic_observation");
+  }
+  if (
+    lead.templateRequiresIndustry &&
+    !(lead.industry && lead.industry.trim())
+  ) {
+    reasons.push("industry_unknown");
+  }
+  const postal = lead.postalAddress?.trim();
+  if (postal && !isValidUkPostalAddress(postal)) {
+    reasons.push("postal_address_invalid");
   }
 
   const reviewReasons = reasons.filter(

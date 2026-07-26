@@ -21,16 +21,34 @@ vi.mock("../outreach-db", () => ({
   updateLeadMessageAttempt: (...args: unknown[]) => updateLeadMessageAttempt(...args),
   MAX_MESSAGE_SEND_ATTEMPTS: 5,
   isSuppressed: (...args: unknown[]) => isSuppressed(...args),
-  leadGateInput: (lead: Lead) => ({
-    priorityScore: lead.priorityScore,
-    corporateSubscriber: lead.corporateSubscriber,
-    emailVerified: lead.emailVerified,
-    contactEmail: lead.contactEmail,
-    suppressed: lead.suppressed,
-    demoStatus: lead.demoStatus,
-    demoUrl: lead.demoUrl,
-    status: lead.status,
-  }),
+  leadGateInput: (lead: Lead, extras?: { postalAddress?: string | null }) => {
+    const audit = (lead.audit as Record<string, unknown>) || {};
+    const outreach = audit.outreach as { signal?: string } | undefined;
+    let observationSignal = outreach?.signal ?? "generic";
+    if (!outreach?.signal) {
+      if (!lead.websiteUrl?.trim()) observationSignal = "no_website";
+      else if (audit.https === false) observationSignal = "https";
+      else if (audit.mobile_friendly === false) observationSignal = "mobile_friendly";
+      else if (typeof audit.builder === "string" && audit.builder.trim()) {
+        observationSignal = "builder";
+      }
+    }
+    return {
+      priorityScore: lead.priorityScore,
+      corporateSubscriber: lead.corporateSubscriber,
+      emailVerified: lead.emailVerified,
+      contactEmail: lead.contactEmail,
+      suppressed: lead.suppressed,
+      demoStatus: lead.demoStatus,
+      demoUrl: lead.demoUrl,
+      status: lead.status,
+      businessName: lead.businessName,
+      industry: lead.industry,
+      observationSignal,
+      templateRequiresIndustry: false,
+      postalAddress: extras?.postalAddress ?? null,
+    };
+  },
   setLeadReviewReasons: (...args: unknown[]) => setLeadReviewReasons(...args),
   settingsGateInput: (s: OutreachSettings) => ({
     autoSendEnabled: s.autoSendEnabled,
@@ -117,7 +135,7 @@ function baseSettings(over: Partial<OutreachSettings> = {}): OutreachSettings {
     sendingDomain: null,
     fromAddress: "Outreach <hello@outreach.example>",
     replyTo: null,
-    postalAddress: "Humza Butt, United Kingdom",
+    postalAddress: "12 Example Road, Croydon CR0 4JF",
     followupOffsetsDays: [3, 7],
     dryRun: true,
     pausedUntil: null,
@@ -342,6 +360,19 @@ describe("sendLeadOutreach fail-closed", () => {
     expect(insertLeadMessage).not.toHaveBeenCalled();
   });
 
+  it("placeholder postal → postal_address_invalid under force", async () => {
+    const result = await sendLeadOutreach({
+      sql,
+      env: baseEnv({ OUTREACH_POSTAL_ADDRESS: undefined }),
+      lead: baseLead(),
+      settings: baseSettings({ postalAddress: "Humza Butt, United Kingdom" }),
+      origin: "https://example.com",
+      force: true,
+    });
+    expect(result.reasons).toContain("postal_address_invalid");
+    expect(insertLeadMessage).not.toHaveBeenCalled();
+  });
+
   it("unset unsubscribe key → unsubscribe_key_not_configured", async () => {
     const result = await sendLeadOutreach({
       sql,
@@ -380,7 +411,7 @@ describe("sendLeadOutreach fail-closed", () => {
     const body = String(insertLeadMessage.mock.calls[0]?.[1]?.body ?? "");
     expect(body.split(/\n--\n/).length).toBe(2);
     expect(body).toContain("Don't want these?");
-    expect(body).toContain("Humza Butt · Humza Butt, United Kingdom");
+    expect(body).toContain("Humza Butt · 12 Example Road, Croydon CR0 4JF");
   });
 
   it("custom_body does not weaken PECR, freemail, suppression, or demo gates", async () => {

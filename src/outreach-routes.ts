@@ -39,7 +39,8 @@ import {
   updateLead,
   updateOutreachSettings,
 } from "./outreach-db";
-import { bareDomain, applyCustomInitialCopy, renderOutreachCopy, resolvePostalAddress, resolveTemplateId } from "./outreach/copy";
+import { bareDomain, resolvePostalAddress } from "./outreach/copy";
+import { buildSendConfirmPreview } from "./outreach/sendConfirm";
 import { canAutoSend, emailDomain } from "./outreach/canAutoSend";
 import { buildOutreachPreflight } from "./outreach/preflight";
 import { validateCustomBody } from "./outreach/draft";
@@ -180,7 +181,6 @@ outreachApp.get("/api/leads/:id/outreach-preview", requireApiKey, async (c) => {
   );
   const origin = new URL(c.req.url).origin;
   const unsubUrl = `${origin}/api/unsubscribe?token=${encodeURIComponent(token)}`;
-  const templateId = resolveTemplateId(lead.followupStep);
   const copyLead = {
     id: lead.id,
     businessName: lead.businessName,
@@ -194,22 +194,14 @@ outreachApp.get("/api/leads/:id/outreach-preview", requireApiKey, async (c) => {
     offerAmount: Number(lead.offerAmount || 500),
     audit: lead.audit || {},
   };
-  const generated = renderOutreachCopy({
+  const rendered = buildSendConfirmPreview({
     lead: copyLead,
     postalAddress: postal,
     unsubscribeUrl: unsubUrl,
-    templateId,
+    customBody: lead.customBody,
+    customSubject: lead.customSubject,
+    followupStep: lead.followupStep,
   });
-  const rendered =
-    templateId === "initial"
-      ? applyCustomInitialCopy(
-          generated,
-          lead.customBody,
-          lead.customSubject,
-          postal,
-          unsubUrl
-        )
-      : generated;
   return c.json({
     subject: rendered.subject,
     text: rendered.text,
@@ -325,9 +317,10 @@ outreachApp.get("/api/leads/:id/send-readiness", requireApiKey, async (c) => {
   if (!lead) return c.json({ error: "not found" }, 404);
   const settings = await getOutreachSettings(sql);
   const preflight = buildOutreachPreflight(settings, c.env);
+  const postal = resolvePostalAddress(settings, c.env);
   let suppressedExtra = false;
   if (lead.contactEmail) suppressedExtra = await isSuppressed(sql, lead.contactEmail);
-  const gateLead = leadGateInput(lead);
+  const gateLead = leadGateInput(lead, { postalAddress: postal });
   if (suppressedExtra) gateLead.suppressed = true;
   const hard = canAutoSend(
     gateLead,

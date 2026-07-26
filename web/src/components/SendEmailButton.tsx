@@ -6,6 +6,7 @@ type Readiness = {
   ok: boolean;
   labels: string[];
   blocking: string[];
+  reasons: string[];
   dryRun: boolean;
   preflightReady: boolean;
 };
@@ -34,12 +35,20 @@ export function SendEmailButton({
   const loadReadiness = useCallback(async () => {
     try {
       const r = await api.getSendReadiness(lead.id);
-      setReadiness(r);
+      setReadiness({
+        ok: r.ok,
+        labels: r.labels,
+        blocking: r.blocking,
+        reasons: r.reasons ?? [],
+        dryRun: r.dryRun,
+        preflightReady: r.preflightReady,
+      });
     } catch (e) {
       setReadiness({
         ok: false,
         labels: [e instanceof Error ? e.message : String(e)],
         blocking: [],
+        reasons: [],
         dryRun: false,
         preflightReady: false,
       });
@@ -48,15 +57,19 @@ export function SendEmailButton({
 
   useEffect(() => {
     void loadReadiness();
-  }, [loadReadiness, lead.status, lead.contactEmail, lead.demoStatus, lead.emailVerified]);
+  }, [loadReadiness, lead.status, lead.contactEmail, lead.demoStatus, lead.emailVerified, lead.businessName, lead.industry]);
 
-  const enabled = readiness?.ok === true;
   const dryRun = readiness?.dryRun === true;
+  const blockLabels =
+    readiness?.blocking?.length
+      ? readiness.blocking
+      : readiness?.labels ?? [];
+  const canConfirm = readiness?.ok === true;
   const tooltip =
-    !enabled && readiness
-      ? readiness.blocking.length
-        ? readiness.blocking.join("; ")
-        : readiness.labels.join("; ")
+    !canConfirm && readiness
+      ? blockLabels.length
+        ? blockLabels.join("; ")
+        : "Not ready to send"
       : undefined;
 
   const alreadySent =
@@ -67,6 +80,7 @@ export function SendEmailButton({
     setError(null);
     setBusy(true);
     try {
+      await loadReadiness();
       const p = await api.getOutreachPreview(lead.id);
       setPreview({ subject: p.subject, text: p.text });
       setOpen(true);
@@ -78,6 +92,7 @@ export function SendEmailButton({
   }
 
   async function confirmSend() {
+    if (!canConfirm) return;
     setBusy(true);
     setError(null);
     try {
@@ -104,7 +119,7 @@ export function SendEmailButton({
       <button
         type="button"
         className="btn"
-        disabled={!enabled || busy}
+        disabled={busy}
         title={tooltip}
         onClick={() => void openModal()}
       >
@@ -125,13 +140,31 @@ export function SendEmailButton({
             <p>
               To: <strong>{lead.contactEmail}</strong>
             </p>
-            <p className="meta">Subject: {preview.subject}</p>
+            <p>
+              <strong>Subject:</strong> {preview.subject}
+            </p>
             <pre className="audit-json" style={{ whiteSpace: "pre-wrap", maxHeight: 320, overflow: "auto" }}>
               {preview.text}
             </pre>
+            {!canConfirm && blockLabels.length > 0 && (
+              <div className="error-banner" style={{ marginTop: "0.75rem" }}>
+                <p style={{ margin: "0 0 0.35rem" }}>Cannot send — fix these first:</p>
+                <ul style={{ margin: 0, paddingLeft: "1.2rem" }}>
+                  {blockLabels.map((l) => (
+                    <li key={l}>{l}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {error && <div className="error-banner">{error}</div>}
             <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
-              <button type="button" className="btn" disabled={busy} onClick={() => void confirmSend()}>
+              <button
+                type="button"
+                className="btn"
+                disabled={busy || !canConfirm}
+                title={!canConfirm ? tooltip : undefined}
+                onClick={() => void confirmSend()}
+              >
                 {busy ? "Sending…" : dryRun ? "Queue dry run" : "Confirm send"}
               </button>
               <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => setOpen(false)}>

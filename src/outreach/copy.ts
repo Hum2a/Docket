@@ -86,6 +86,33 @@ const INDUSTRY_PLURAL: Record<string, string> = {
   accountant: "accountants",
   accountants: "accountants",
   accounting: "accountants",
+  garage: "garages",
+  garages: "garages",
+  plumbing: "plumbers",
+  plumber: "plumbers",
+  plumbers: "plumbers",
+  printing: "printers",
+  printers: "printers",
+  upholstery: "upholsterers",
+  upholsterer: "upholsterers",
+  upholsterers: "upholsterers",
+  barber: "barbers",
+  barbers: "barbers",
+  engineering: "engineering firms",
+  electrical: "electricians",
+  electrician: "electricians",
+  electricians: "electricians",
+  refrigeration: "refrigeration firms",
+  building: "builders",
+  builder: "builders",
+  builders: "builders",
+  roofing: "roofers",
+  roofer: "roofers",
+  roofers: "roofers",
+  care: "care providers",
+  catering: "caterers",
+  caterer: "caterers",
+  caterers: "caterers",
   solicitor: "solicitors",
   solicitors: "solicitors",
   law: "solicitors",
@@ -100,7 +127,8 @@ const INDUSTRY_PLURAL: Record<string, string> = {
 
 export function industryPlural(industry: string | null | undefined): string {
   const key = (industry || "").trim().toLowerCase();
-  if (!key) return "professional-services firms";
+  // Prefer omission over a wrong trade guess — "local businesses" is vague but safe.
+  if (!key) return "local businesses";
   if (INDUSTRY_PLURAL[key]) return INDUSTRY_PLURAL[key];
   if (key.endsWith("ies")) return key;
   if (key.endsWith("y")) return `${key.slice(0, -1)}ies`;

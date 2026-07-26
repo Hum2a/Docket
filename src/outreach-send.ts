@@ -187,7 +187,7 @@ export async function sendLeadOutreach(opts: {
   let suppressedExtra = false;
   if (lead.contactEmail) suppressedExtra = await isSuppressed(sql, lead.contactEmail);
 
-  const gateLead = leadGateInput(lead);
+  const gateLead = leadGateInput(lead, { postalAddress: postal });
   if (suppressedExtra) gateLead.suppressed = true;
 
   // Follow-ups/final are already past the initial status gate

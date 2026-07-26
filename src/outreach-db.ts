@@ -6,6 +6,7 @@ import { contactRoute } from "../shared/contactRoute";
 import { statusAfterDemoReady } from "../shared/demoStatus";
 import { normalizeBusinessKey, planBulkUpserts } from "./outreach/bulkUpsert";
 import { canAutoSend } from "./outreach/canAutoSend";
+import { getPersistedOutreach, pickObservation } from "./outreach/copy";
 import {
   clampLeadLimit,
   decodeLeadCursor,
@@ -1084,7 +1085,18 @@ export async function getLeadStats(sql: Sql) {
   };
 }
 
-export function leadGateInput(lead: Lead) {
+export function leadGateInput(
+  lead: Lead,
+  extras?: { postalAddress?: string | null }
+) {
+  const audit = (lead.audit as Record<string, unknown>) || {};
+  const persisted = getPersistedOutreach(audit);
+  const observationSignal =
+    persisted?.signal ??
+    pickObservation({
+      websiteUrl: lead.websiteUrl,
+      audit,
+    }).signal;
   return {
     priorityScore: lead.priorityScore,
     corporateSubscriber: lead.corporateSubscriber,
@@ -1094,6 +1106,11 @@ export function leadGateInput(lead: Lead) {
     demoStatus: lead.demoStatus,
     demoUrl: lead.demoUrl,
     status: lead.status,
+    businessName: lead.businessName,
+    industry: lead.industry,
+    observationSignal,
+    templateRequiresIndustry: false,
+    postalAddress: extras?.postalAddress ?? null,
   };
 }
 

@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { canAutoSend, type LeadGateInput, type OutreachSettingsGateInput } from "./canAutoSend";
+import { filterManualHardReasons } from "../../shared/manualGate";
+import { industryPlural, renderOutreachCopy, type CopyLeadInput } from "./copy";
+import {
+  isBusinessNameDomain,
+  isValidUkPostalAddress,
+  QUALITY_HARD_REASONS,
+} from "./qualityGate";
+import { buildSendConfirmPreview, sendConfirmBlocked } from "./sendConfirm";
 import { mergeLeadUpdate, planBulkUpserts } from "./bulkUpsert";
 
 const baseLead: LeadGateInput = {
@@ -11,6 +19,11 @@ const baseLead: LeadGateInput = {
   demoStatus: "ready",
   demoUrl: "https://acme.humza-butt.space",
   status: "demo_ready",
+  businessName: "Acme Accountants Ltd",
+  industry: "accountant",
+  observationSignal: "https",
+  templateRequiresIndustry: false,
+  postalAddress: "12 Example Road, Croydon CR0 4JF",
 };
 
 const baseSettings: OutreachSettingsGateInput = {
@@ -71,6 +84,131 @@ describe("canAutoSend", () => {
     expect(r.ok).toBe(false);
     expect(r.reasons).toContain("dry_run");
     expect(r.deferred).toBe(true);
+  });
+});
+
+describe("quality hard blocks (Task 17)", () => {
+  it("foo.co.uk blocks with business_name_is_domain, including under force/manual", () => {
+    expect(isBusinessNameDomain("foo.co.uk")).toBe(true);
+    const r = canAutoSend({ ...baseLead, businessName: "foo.co.uk" }, baseSettings, 0);
+    expect(r.ok).toBe(false);
+    expect(r.reasons).toContain("business_name_is_domain");
+    // force/manual only skip operational reasons — quality reasons remain
+    const hard = filterManualHardReasons(r.reasons);
+    expect(hard).toContain("business_name_is_domain");
+    for (const reason of QUALITY_HARD_REASONS) {
+      expect(filterManualHardReasons([reason])).toEqual([reason]);
+    }
+  });
+
+  it("generic observation blocks; a specific signal does not", () => {
+    const bad = canAutoSend({ ...baseLead, observationSignal: "generic" }, baseSettings, 0);
+    expect(bad.reasons).toContain("generic_observation");
+    expect(filterManualHardReasons(bad.reasons)).toContain("generic_observation");
+
+    const good = canAutoSend({ ...baseLead, observationSignal: "footer_year" }, baseSettings, 0);
+    expect(good.reasons).not.toContain("generic_observation");
+    expect(good.ok).toBe(true);
+  });
+
+  it("postal address Humza Butt, United Kingdom blocks; real UK address passes", () => {
+    expect(isValidUkPostalAddress("Humza Butt, United Kingdom")).toBe(false);
+    expect(isValidUkPostalAddress("12 Example Road, Croydon CR0 4JF")).toBe(true);
+
+    const bad = canAutoSend(
+      { ...baseLead, postalAddress: "Humza Butt, United Kingdom" },
+      baseSettings,
+      0
+    );
+    expect(bad.reasons).toContain("postal_address_invalid");
+    expect(filterManualHardReasons(bad.reasons)).toContain("postal_address_invalid");
+
+    const good = canAutoSend(
+      { ...baseLead, postalAddress: "12 Example Road, Croydon CR0 4JF" },
+      baseSettings,
+      0
+    );
+    expect(good.reasons).not.toContain("postal_address_invalid");
+  });
+
+  it("null industry renders local businesses and does not block", () => {
+    expect(industryPlural(null)).toBe("local businesses");
+    expect(industryPlural("")).toBe("local businesses");
+    expect(industryPlural("garage")).toBe("garages");
+
+    const r = canAutoSend(
+      { ...baseLead, industry: null, templateRequiresIndustry: false },
+      baseSettings,
+      0
+    );
+    expect(r.reasons).not.toContain("industry_unknown");
+    expect(r.ok).toBe(true);
+
+    const copyLead: CopyLeadInput = {
+      id: 1,
+      businessName: "QMS Ltd",
+      slug: "qms",
+      industry: null,
+      location: "Grimsby",
+      contactName: null,
+      websiteUrl: "https://qms-grimsby.co.uk",
+      demoUrl: "https://qms.humza-butt.space",
+      demoExpiresAt: null,
+      offerAmount: 500,
+      audit: { https: false },
+    };
+    const rendered = renderOutreachCopy({
+      lead: copyLead,
+      postalAddress: "12 Example Road, Croydon CR0 4JF",
+      unsubscribeUrl: "https://example.com/u",
+      templateId: "initial",
+    });
+    expect(rendered.text).toContain("local businesses");
+    expect(rendered.text).not.toContain("professional-services");
+  });
+
+  it("industry_unknown only when templateRequiresIndustry", () => {
+    const r = canAutoSend(
+      { ...baseLead, industry: null, templateRequiresIndustry: true },
+      baseSettings,
+      0
+    );
+    expect(r.reasons).toContain("industry_unknown");
+  });
+
+  it("confirm modal preview matches renderOutreachCopy exactly", () => {
+    const lead: CopyLeadInput = {
+      id: 42,
+      businessName: "Acme Accountants Ltd",
+      slug: "acme",
+      industry: "accountant",
+      location: "Bristol",
+      contactName: "Jane",
+      websiteUrl: "https://acme.co.uk",
+      demoUrl: "https://acme.humza-butt.space",
+      demoExpiresAt: null,
+      offerAmount: 500,
+      audit: { https: false },
+    };
+    const postal = "12 Example Road, Croydon CR0 4JF";
+    const unsub = "https://docket.example/api/unsubscribe?token=x";
+    const fromRender = renderOutreachCopy({
+      lead,
+      postalAddress: postal,
+      unsubscribeUrl: unsub,
+      templateId: "initial",
+    });
+    const fromModal = buildSendConfirmPreview({
+      lead,
+      postalAddress: postal,
+      unsubscribeUrl: unsub,
+      followupStep: 0,
+    });
+    expect(fromModal.subject).toBe(fromRender.subject);
+    expect(fromModal.text).toBe(fromRender.text);
+    expect(fromModal.text).toContain("--\nHumza Butt ·");
+    expect(sendConfirmBlocked(["business_name_is_domain"])).toBe(true);
+    expect(sendConfirmBlocked([])).toBe(false);
   });
 });
 
