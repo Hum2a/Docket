@@ -1,0 +1,35 @@
+---
+description: Docket UI design system — match board look at / and /outreach
+globs: web/**/*.{tsx,css}
+alwaysApply: false
+---
+
+# UI design system
+
+Match the job board (`/`) and outreach board (`/outreach`). Tokens live in `web/src/styles.css` `:root`.
+
+## Tokens
+
+- Colors: `--ink`, `--muted`, `--surface`, `--panel`, `--line`, `--accent: #0f6e56`, `--accent-soft`, `--warn*`, `--danger*`
+- Fonts: Fraunces (`--font-display`) for titles/brand; DM Sans (`--font-ui`) for body/controls
+- Radius: `--radius` (12px); buttons/inputs often 10px; pills `999px`
+
+## Vocabulary
+
+Reuse existing classes — do not invent parallel systems:
+
+- Layout: `.app-shell`, `.page-head`, `.panel`, `.detail-grid`
+- Actions: `.btn`, `.btn-primary`, `.btn-ghost`, `.btn-danger`
+- Forms: `.field`, `.form-grid`, `.section`, `.checkbox-row`
+- Chips: `ContactRouteChip`, `DemoChip`, `.badge`
+
+## Do
+
+- Prefer CSS classes over inline styles
+- One primary CTA per view (`btn-primary`); secondary actions as ghosts
+- Keep cool gray + teal — no purple gradients, cream+terracotta, glow, or dark-mode defaults
+
+## Don't
+
+- Do not add Tailwind or shadcn unless explicitly requested
+- Do not introduce a second font stack or accent color

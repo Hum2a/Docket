@@ -1,0 +1,31 @@
+---
+description: Outreach lead detail UX — at-a-glance decision strip first
+globs: web/src/pages/outreach/**/*.tsx
+alwaysApply: false
+---
+
+# Outreach detail UX
+
+For `/outreach/leads/:id` (and related outreach pages), prioritize scanability.
+
+## First viewport
+
+1. **Summary strip** — business name (Fraunces), contact route + demo chips, email, priority, industry/location, sent/reply, send-readiness
+2. **Action bar** — one primary send CTA (`btn-primary`); Approve / Send / Delete as ghosts; status select nearby
+3. **Review reasons** — only when present
+
+## Below the fold
+
+- Draft + preview as sent
+- Lead edit form (`.field` / `.section`) + side column (thread, notes, reminders)
+- Audit JSON behind a `<details>` toggle — never dump raw JSON in the first viewport
+
+## Components
+
+Reuse `DemoChip`, `ContactRouteChip`, `LeadStatusSelect`, `SendEmailButton`. Scores as `.score-pills`, not buried only in the form.
+
+## Anti-patterns
+
+- Dense ghost-only action clusters with no primary CTA
+- Draft panel above identity/sendability
+- Duplicate DemoChip in head and side without a clear summary role

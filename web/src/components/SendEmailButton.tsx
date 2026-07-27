@@ -20,11 +20,14 @@ export function SendEmailButton({
   lead,
   onDone,
   buttonLabel,
+  className = "btn",
 }: {
   lead: Lead;
   onDone?: () => void;
   /** Override the default Send email / Send follow-up label (e.g. Retry send). */
   buttonLabel?: string;
+  /** Extra button classes (e.g. `btn btn-primary` on lead detail). */
+  className?: string;
 }) {
   const [readiness, setReadiness] = useState<Readiness | null>(null);
   const [open, setOpen] = useState(false);
@@ -118,7 +121,7 @@ export function SendEmailButton({
     <>
       <button
         type="button"
-        className="btn"
+        className={className}
         disabled={busy}
         title={tooltip}
         onClick={() => void openModal()}
