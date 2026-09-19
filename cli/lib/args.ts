@@ -76,7 +76,9 @@ export function positional(argv: string[]): string[] {
   return out;
 }
 
-export const DEFAULT_BASE = "https://jobtracker.humza-butt.space";
+import { APP_ORIGIN } from "../../shared/appOrigin";
+
+export const DEFAULT_BASE = APP_ORIGIN;
 
 export function resolveBase(argv: string[]): string {
   const raw = pick(argv, "base") ?? DEFAULT_BASE;

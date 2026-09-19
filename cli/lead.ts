@@ -14,6 +14,7 @@ import {
   pick,
   positional,
   resolveBase,
+  DEFAULT_BASE,
 } from "./lib/args";
 import { buildPatchFromSets } from "./lib/coerce";
 import { computeDiff, confirmApply, formatDiff } from "./lib/diff";
@@ -68,7 +69,7 @@ function usage(): never {
   npm run lead -- send <id> [--warm] [--dry] [--queue] [--yes] [--override-dry-run] [--ack-warnings=codes|all]
 
 Options:
-  --base=URL   Default https://jobtracker.humza-butt.space (use http://localhost:8787 for wrangler)
+  --base=URL   Default ${DEFAULT_BASE} (use http://localhost:8787 for wrangler)
   --yes        Skip confirmation prompts (patch/draft Apply?; send/consent typed name)
   --dry        Preview send only — never contacts Resend
   --warm       Consent lane: send to consent_email from personal From

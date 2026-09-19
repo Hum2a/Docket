@@ -151,7 +151,7 @@ describe("sendWarmOutreach", () => {
       env: baseEnv(),
       lead: baseLead(),
       settings: baseSettings(),
-      origin: "https://jobtracker.humza-butt.space",
+      origin: "https://docket.humza-butt.space",
     });
     expect(result.sent).toBe(true);
     expect(sendResendEmail).toHaveBeenCalledWith(

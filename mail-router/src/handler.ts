@@ -1,7 +1,8 @@
 import PostalMime from "postal-mime";
+import { APP_ORIGIN } from "../../shared/appOrigin";
 
 const BODY_CAP = 20 * 1024;
-const INBOUND_URL = "https://jobtracker.humza-butt.space/api/webhooks/inbound";
+const INBOUND_URL = `${APP_ORIGIN}/api/webhooks/inbound`;
 
 export type MailRouterEnv = {
   FORWARD_TO: string;

@@ -2,7 +2,7 @@
 
 Personal job application tracker and B2B outreach CRM, served as a React SPA from a Cloudflare Worker with Neon Postgres and R2.
 
-**Live:** [jobtracker.humza-butt.space](https://jobtracker.humza-butt.space)
+**Live:** [docket.humza-butt.space](https://docket.humza-butt.space)
 
 | Mode | What it does |
 | --- | --- |

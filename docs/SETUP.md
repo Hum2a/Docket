@@ -1,6 +1,6 @@
 # Setup
 
-Local and production setup for Docket (Worker name: `jobtracker`).
+Local and production setup for Docket (Worker name: `docket`).
 
 ## Prerequisites
 
@@ -115,7 +115,7 @@ npm run deploy             # build SPA + wrangler deploy
 npm run deploy:full        # env:merge → secrets:sync → db:migrate → deploy
 ```
 
-Custom domain is set in `wrangler.toml`: `jobtracker.humza-butt.space`.
+Custom domain is set in `wrangler.toml`: `docket.humza-butt.space`. After renaming the Worker, run `npm run deploy:full` so secrets land on `docket`. Delete the unused `jobtracker` Worker in the Cloudflare dashboard.
 
 ## Verify
 

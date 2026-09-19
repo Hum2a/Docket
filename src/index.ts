@@ -1,3 +1,4 @@
+import { APP_ORIGIN } from "../shared/appOrigin";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { Context, Next } from "hono";
@@ -530,13 +531,13 @@ export default {
     ctx.waitUntil(
       (async () => {
         if (cron === "0 9 * * 1-5") {
-          const origin = "https://jobtracker.humza-butt.space";
+          const origin = APP_ORIGIN;
           await runQueuedWarmSends(env, origin);
           await runOutreachAutosend(env, origin);
           return;
         }
         if (cron === "0 10 * * 1-5") {
-          await runOutreachSequence(env, "https://jobtracker.humza-butt.space");
+          await runOutreachSequence(env, APP_ORIGIN);
           return;
         }
         // Default: daily reminder digest (0 8 * * *)

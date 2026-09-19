@@ -15,7 +15,7 @@ Reply-To: `humza@humza-butt.space`
    `v=DMARC1; p=none; rua=mailto:humza@humza-butt.space`
 
    After two clean weeks, move to `p=quarantine`.
-4. Secrets (jobtracker Worker):
+4. Secrets (docket Worker):
 
    ```
    wrangler secret put OUTREACH_PERSONAL_FROM
@@ -45,6 +45,6 @@ Reply-To: `humza@humza-butt.space`
    wrangler secret put RESEND_INBOUND_SECRET
    ```
 
-   `FORWARD_TO` must be the verified Hotmail address. `RESEND_INBOUND_SECRET` must match jobtracker.
+   `FORWARD_TO` must be the verified Hotmail address. `RESEND_INBOUND_SECRET` must match Docket.
 
 Forwarding runs first. Docket logging is best-effort and must never block the forward.

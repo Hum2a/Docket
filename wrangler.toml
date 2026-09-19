@@ -1,10 +1,10 @@
-name = "jobtracker"
+name = "docket"
 main = "src/index.ts"
 compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
 
 routes = [
-  { pattern = "jobtracker.humza-butt.space", custom_domain = true }
+  { pattern = "docket.humza-butt.space", custom_domain = true }
 ]
 
 # Built React SPA (npm run build:web → dist/)

@@ -9,6 +9,7 @@ import {
   collectSets,
   hasFlag,
   resolveBase,
+  DEFAULT_BASE,
 } from "./lib/args";
 import { buildPatchFromSets } from "./lib/coerce";
 import { computeDiff, confirmApply, formatDiff } from "./lib/diff";
@@ -24,7 +25,7 @@ function usage(): never {
   npm run settings -- --set dryRun=false [--set sendingDomain=...]
 
 Options:
-  --base=URL   Default https://jobtracker.humza-butt.space
+  --base=URL   Default ${DEFAULT_BASE}
   --yes        Skip Apply? confirmation
 
 API_KEY is read from .dev.vars or the environment — never pass it on the command line.`);

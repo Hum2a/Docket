@@ -1,7 +1,8 @@
 import type { Application, Status } from "../shared/schema";
+import { APP_ORIGIN } from "../shared/appOrigin";
 import { escapeHtml } from "./email";
 
-export const APP_ORIGIN = "https://jobtracker.humza-butt.space";
+export { APP_ORIGIN };
 export const APP_SETTINGS_URL = `${APP_ORIGIN}/settings`;
 
 const STATUS_STYLE: Record<

@@ -2,7 +2,7 @@
 
 Local TypeScript CLIs for outreach ops. Both read `API_KEY` from `.dev.vars` or the environment — **never pass the key on the command line**.
 
-Default base URL: `https://jobtracker.humza-butt.space`  
+Default base URL: `https://docket.humza-butt.space`  
 Local Worker: `--base=http://localhost:8787`
 
 ---

@@ -1,6 +1,6 @@
 # API
 
-Base URL (production): `https://jobtracker.humza-butt.space`
+Base URL (production): `https://docket.humza-butt.space`
 
 Auth header for protected routes:
 
