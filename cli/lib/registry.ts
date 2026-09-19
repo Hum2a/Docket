@@ -16,7 +16,7 @@ export const LEAD_COMMANDS = [
 ] as const;
 export type LeadCommand = (typeof LEAD_COMMANDS)[number];
 
-/** Batch / cron send verbs that must not appear in the lead CLI. */
+/** Batch send verbs that must not appear in the lead CLI. */
 export const FORBIDDEN_BATCH_SEND_VERBS = [
   "approve",
   "autosend",

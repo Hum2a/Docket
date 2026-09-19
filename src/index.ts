@@ -1,4 +1,3 @@
-import { APP_ORIGIN } from "../shared/appOrigin";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { Context, Next } from "hono";
@@ -43,12 +42,7 @@ import {
   sendTestEventEmail,
 } from "./notify";
 import { DEFAULT_FROM, parseEmailList } from "./email";
-import {
-  outreachApp,
-  runOutreachAutosend,
-  runOutreachSequence,
-} from "./outreach-routes";
-import { runQueuedWarmSends } from "./outreach/warmSend";
+import { outreachApp } from "./outreach-routes";
 
 type AppContext = { Bindings: Env };
 
@@ -526,29 +520,4 @@ app.get("*", async (c) => {
 
 export default {
   fetch: app.fetch,
-  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
-    const cron = event.cron;
-    ctx.waitUntil(
-      (async () => {
-        if (cron === "0 9 * * 1-5") {
-          const origin = APP_ORIGIN;
-          await runQueuedWarmSends(env, origin);
-          await runOutreachAutosend(env, origin);
-          return;
-        }
-        if (cron === "0 10 * * 1-5") {
-          await runOutreachSequence(env, APP_ORIGIN);
-          return;
-        }
-        // Default: daily reminder digest (0 8 * * *)
-        const sql = getSql(env.DATABASE_URL);
-        await runDigest({
-          sql,
-          resendApiKey: env.RESEND_API_KEY,
-          digestToFallback: env.DIGEST_TO,
-          from: env.DIGEST_FROM || DEFAULT_FROM,
-        });
-      })()
-    );
-  },
 };

@@ -38,7 +38,7 @@ X-Api-Key: <API_KEY>
 | POST | `/api/digest/run` | key |
 | POST | `/api/email/test` | key |
 
-When `RESEND_API_KEY` is set and recipients exist (Settings → Notify emails, or `DIGEST_TO`), creating an application or changing its status sends a notification email. Bulk import does not. Daily cron still runs the reminder digest.
+When `RESEND_API_KEY` is set and recipients exist (Settings → Notify emails, or `DIGEST_TO`), creating an application or changing its status sends a notification email. Bulk import does not. The reminder digest is manual only (`POST /api/digest/run`).
 
 ### Import JSON
 

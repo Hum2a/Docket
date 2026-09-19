@@ -37,7 +37,7 @@ Global options:
 | `--ack-warnings=a,b` | Acknowledge quality warnings (or `all`). Never skips PECR / suppressions / demo-not-ready |
 | `--help` | Usage |
 
-**Send is single-lead only** — no `--all`, no batch. Autosend and sequence are API/cron only, not exposed here.
+**Send is single-lead only** — no `--all`, no batch. Autosend and sequence are API-only, not exposed here.
 
 Examples:
 

@@ -56,7 +56,7 @@ Implemented in `src/outreach/canAutoSend.ts` (+ quality helpers). High level:
 | Custom draft | Optional | Optional; skips generic observation | Required |
 | Postal address (footer) | Required | Required | Required |
 | Priority threshold | Required | **Warning** (tick-box) | Not used |
-| Dry run / pause / daily cap | Defers | Skipped (manual/force) | Cron holds if dry run |
+| Dry run / pause / daily cap | Defers | Skipped (manual/force) | Queue holds if dry run |
 | Quality (generic observation, name, location, demo score) | Blocks | **Warning** (tick-box) | Demo score / freemail warnings |
 | Suppressions | Blocks | Blocks | Blocks |
 
@@ -83,17 +83,13 @@ npm run lead -- preflight
 npm run settings -- --show
 ```
 
-## Crons
+## Manual batch send
 
-Configured in `wrangler.toml`:
+There are no Worker cron triggers. Autosend, follow-up sequence, and the job reminder digest only run when you trigger them:
 
-| Cron | Job |
-| --- | --- |
-| `0 8 * * *` | Job reminder digest |
-| `0 9 * * 1-5` | Queued warm sends, then cold autosend |
-| `0 10 * * 1-5` | Outreach follow-up sequence (skips consented leads) |
-
-Manual triggers (API key): `POST /api/outreach/autosend`, `POST /api/outreach/sequence`.
+- `POST /api/outreach/autosend`
+- `POST /api/outreach/sequence`
+- `POST /api/digest/run` (Settings → Run digest)
 
 ## Compliance & ops
 

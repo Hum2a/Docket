@@ -67,7 +67,7 @@ Full setup, secrets, and migration notes: **[docs/SETUP.md](docs/SETUP.md)**
 | Doc | Contents |
 | --- | --- |
 | [Setup](docs/SETUP.md) | `.dev.vars`, migrations, R2, deploy, secrets |
-| [Outreach](docs/OUTREACH.md) | Pipeline, send gates, crons, demos, compliance |
+| [Outreach](docs/OUTREACH.md) | Pipeline, send gates, demos, compliance |
 | [API](docs/API.md) | HTTP endpoints and auth |
 | [CLI](docs/CLI.md) | `lead` and `settings` commands |
 
