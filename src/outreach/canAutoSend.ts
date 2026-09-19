@@ -11,6 +11,7 @@ import {
   isBusinessNameImplausible,
   isPartitionShapedLocation,
   isValidUkPostalAddress,
+  MIN_DEMO_AUDIT_SCORE,
 } from "./qualityGate";
 
 export type LeadGateInput = {
@@ -26,6 +27,10 @@ export type LeadGateInput = {
   businessName?: string | null;
   /** Resolved observation signal from pickObservation (null = missing). */
   observationSignal?: string | null;
+  /** Custom subject + body: skip generic_observation. */
+  hasCustomDraft?: boolean;
+  /** Demo PageSpeed 0–100 when stored on audit.demo_score. */
+  demoAuditScore?: number | null;
   /** Industry slug; null is fine when templates omit the trade phrase. */
   industry?: string | null;
   /**
@@ -138,13 +143,16 @@ export function canAutoSend(
     deferred = true;
   }
 
-  // 10 — quality hard blocks (auto-send / force). Manual/Approve may skip
-  // business_name_implausible via filterManualHardReasons.
+  // 10 — quality (autosend hard-block; manual send treats as warnings)
   if (isBusinessNameImplausible(lead.businessName, lead.location)) {
     reasons.push("business_name_implausible");
   }
-  if (lead.observationSignal === "generic") {
+  if (lead.observationSignal === "generic" && !lead.hasCustomDraft) {
     reasons.push("generic_observation");
+  }
+  const demoScore = lead.demoAuditScore;
+  if (demoScore != null && demoScore < MIN_DEMO_AUDIT_SCORE) {
+    reasons.push("demo_audit_score_low");
   }
   if (
     lead.templateRequiresIndustry &&

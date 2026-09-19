@@ -38,6 +38,8 @@ export const createLeadSchema = z.object({
   location: z.string().optional().nullable(),
   postcode: z.string().optional().nullable(),
   address: z.string().optional().nullable(),
+  openingHours: z.string().optional().nullable(),
+  observationOverride: z.string().max(500).nullable().optional(),
   contactName: z.string().optional().nullable(),
   contactEmail: z.string().optional().nullable(),
   contactPhone: z.string().optional().nullable(),
@@ -85,6 +87,7 @@ export type Lead = {
   location: string | null;
   postcode: string | null;
   address: string | null;
+  openingHours: string | null;
   contactName: string | null;
   contactEmail: string | null;
   contactPhone: string | null;
@@ -124,7 +127,16 @@ export type Lead = {
   customSubject: string | null;
   /** Hand-written initial body (footer still appended by the system). */
   customBody: string | null;
+  /** When set, used as the observation line (signal custom, not generic). */
+  observationOverride: string | null;
   draftUpdatedAt: string | null;
+  /** none | verbal_call | written_reply — warm lane only. */
+  consentStatus: string;
+  consentAt: string | null;
+  consentNote: string | null;
+  /** Address a warm send may go to. Never copied into contactEmail. */
+  consentEmail: string | null;
+  warmSendAt: string | null;
   /** Derived contact channel — computed, not stored. */
   contactRoute: "email" | "freemail" | "phone" | "form" | "none";
 };

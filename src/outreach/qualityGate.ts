@@ -1,7 +1,6 @@
 /**
  * Quality gates for outbound outreach copy.
- * Most apply to auto-send and force; `business_name_implausible` is skippable
- * under manual/Approve (human reviewed the preview) via filterManualHardReasons.
+ * Most apply to auto-send. Manual send treats them as acknowledgable warnings.
  */
 
 /** Hostname-shaped TLDs that indicate businessName is a domain, not a trading name. */
@@ -11,14 +10,24 @@ const DOMAINISH_TLD =
 /** UK postcode (outward + inward), case-insensitive. */
 export const UK_POSTCODE_RE = /\b[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}\b/i;
 
+/** Quality reasons that block autosend; manual send treats them as warnings. */
 export const QUALITY_HARD_REASONS = [
   "business_name_implausible",
   "business_name_is_domain", // legacy alias — normalised to implausible in canAutoSend
   "generic_observation",
   "industry_unknown",
-  "postal_address_invalid",
   "location_invalid",
+  "demo_audit_score_low",
 ] as const;
+
+/** Demo PageSpeed (0–100). Missing score is not a warning. */
+export const MIN_DEMO_AUDIT_SCORE = 90;
+
+export function demoAuditScore(audit: Record<string, unknown> | null | undefined): number | null {
+  const v = audit?.demo_score;
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  return null;
+}
 
 export type QualityHardReason = (typeof QUALITY_HARD_REASONS)[number];
 

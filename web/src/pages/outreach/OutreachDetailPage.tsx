@@ -13,6 +13,9 @@ type SendReadiness = {
   ok: boolean;
   labels: string[];
   blocking: string[];
+  reasons: string[];
+  warnings: string[];
+  warningLabels: string[];
   dryRun: boolean;
 };
 
@@ -42,6 +45,7 @@ function DraftPanel({
   const [editing, setEditing] = useState(hasCustom);
   const [subject, setSubject] = useState(lead.customSubject ?? "");
   const [body, setBody] = useState(lead.customBody ?? "");
+  const [override, setOverride] = useState(lead.observationOverride ?? "");
   const [preview, setPreview] = useState<{
     subject: string;
     text: string;
@@ -63,8 +67,9 @@ function DraftPanel({
     setEditing(Boolean(lead.customBody?.trim()));
     setSubject(lead.customSubject ?? "");
     setBody(lead.customBody ?? "");
+    setOverride(lead.observationOverride ?? "");
     void loadPreview();
-  }, [lead.id, lead.customBody, lead.customSubject, loadPreview]);
+  }, [lead.id, lead.customBody, lead.customSubject, lead.observationOverride, loadPreview]);
 
   async function saveDraft() {
     setBusy(true);
@@ -73,6 +78,7 @@ function DraftPanel({
       const updated = await api.updateLead(lead.id, {
         customSubject: subject.trim() || null,
         customBody: body.trim() || null,
+        observationOverride: override.trim() || null,
       });
       onLeadUpdated(updated);
       setEditing(Boolean(updated.customBody?.trim()));
@@ -152,9 +158,23 @@ function DraftPanel({
             <label htmlFor={`draft-body-ro-${lead.id}`}>Body</label>
             <textarea id={`draft-body-ro-${lead.id}`} rows={10} value={preview.bodyBeforeFooter} readOnly />
           </div>
+          <div className="field" style={{ gridColumn: "1 / -1" }}>
+            <label htmlFor={`draft-obs-ro-${lead.id}`}>Observation override</label>
+            <textarea
+              id={`draft-obs-ro-${lead.id}`}
+              rows={2}
+              value={override}
+              disabled={busy}
+              placeholder="Optional: used as the observation line (counts as custom, not generic)"
+              onChange={(e) => setOverride(e.target.value)}
+            />
+          </div>
           <div className="form-actions">
             <button type="button" className="btn" disabled={busy} onClick={() => void startFromGenerated()}>
               Edit as custom draft
+            </button>
+            <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => void saveDraft()}>
+              Save override
             </button>
           </div>
         </div>
@@ -185,6 +205,17 @@ function DraftPanel({
               onChange={(e) => setBody(e.target.value)}
             />
           </div>
+          <div className="field" style={{ gridColumn: "1 / -1" }}>
+            <label htmlFor={`draft-obs-${lead.id}`}>Observation override</label>
+            <textarea
+              id={`draft-obs-${lead.id}`}
+              rows={2}
+              value={override}
+              disabled={busy}
+              placeholder="Optional: used as the observation line when you are not sending a full custom draft"
+              onChange={(e) => setOverride(e.target.value)}
+            />
+          </div>
           <div className="form-actions">
             <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void saveDraft()}>
               Save draft
@@ -213,6 +244,104 @@ function DraftPanel({
   );
 }
 
+function ConsentCallForm({
+  lead,
+  onLeadUpdated,
+  onError,
+}: {
+  lead: Lead;
+  onLeadUpdated: (lead: Lead) => void;
+  onError: (msg: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [email, setEmail] = useState(lead.consentEmail || lead.contactEmail || "");
+  const [note, setNote] = useState("");
+  const [channel, setChannel] = useState<"phone" | "written">("phone");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setEmail(lead.consentEmail || lead.contactEmail || "");
+  }, [lead.consentEmail, lead.contactEmail]);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email.trim() || !note.trim()) return;
+    setBusy(true);
+    onError(null);
+    try {
+      const updated = await api.recordConsent(lead.id, {
+        email: email.trim(),
+        note: note.trim(),
+        written: channel === "written",
+      });
+      onLeadUpdated(updated);
+      setOpen(false);
+      setNote("");
+    } catch (err) {
+      onError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="consent-call">
+      <button type="button" className="btn" onClick={() => setOpen((v) => !v)}>
+        Got consent on a call
+      </button>
+      {open && (
+        <form className="consent-call-form" onSubmit={(e) => void submit(e)}>
+          <div className="field">
+            <label htmlFor={`consent-email-${lead.id}`}>Email</label>
+            <input
+              id={`consent-email-${lead.id}`}
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor={`consent-note-${lead.id}`}>Note (required)</label>
+            <textarea
+              id={`consent-note-${lead.id}`}
+              required
+              rows={2}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="What they agreed to on the call"
+            />
+          </div>
+          <fieldset className="consent-channel">
+            <legend>Channel</legend>
+            <label className="checkbox-row">
+              <input
+                type="radio"
+                name={`consent-ch-${lead.id}`}
+                checked={channel === "phone"}
+                onChange={() => setChannel("phone")}
+              />
+              Phone
+            </label>
+            <label className="checkbox-row">
+              <input
+                type="radio"
+                name={`consent-ch-${lead.id}`}
+                checked={channel === "written"}
+                onChange={() => setChannel("written")}
+              />
+              Written reply
+            </label>
+          </fieldset>
+          <button type="submit" className="btn btn-primary" disabled={busy || !note.trim() || !email.trim()}>
+            {busy ? "Saving…" : "Record consent"}
+          </button>
+        </form>
+      )}
+    </div>
+  );
+}
+
 export function OutreachDetailPage() {
   const { id } = useParams();
   const leadId = Number(id);
@@ -237,13 +366,17 @@ export function OutreachDetailPage() {
   const [flash, setFlash] = useState<string | null>(null);
   const [flashOk, setFlashOk] = useState(true);
 
-  const loadReadiness = useCallback(async (idNum: number) => {
+  const loadReadiness = useCallback(async (idNum: number, current?: Lead | null) => {
     try {
-      const r = await api.getSendReadiness(idNum);
+      const warm = Boolean(current?.consentStatus && current.consentStatus !== "none");
+      const r = await api.getSendReadiness(idNum, warm ? { lane: "warm" } : undefined);
       setReadiness({
         ok: r.ok,
         labels: r.labels,
         blocking: r.blocking,
+        reasons: r.reasons ?? [],
+        warnings: r.warnings ?? [],
+        warningLabels: r.warningLabels ?? [],
         dryRun: r.dryRun,
       });
     } catch (e) {
@@ -251,6 +384,9 @@ export function OutreachDetailPage() {
         ok: false,
         labels: [e instanceof Error ? e.message : String(e)],
         blocking: [],
+        reasons: [],
+        warnings: [],
+        warningLabels: [],
         dryRun: false,
       });
     }
@@ -270,7 +406,7 @@ export function OutreachDetailPage() {
       setNotes(n);
       setReminders(r);
       setMessages(m);
-      void loadReadiness(leadId);
+      void loadReadiness(leadId, l);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -291,6 +427,8 @@ export function OutreachDetailPage() {
         industry: lead.industry,
         location: lead.location,
         postcode: lead.postcode,
+        address: lead.address,
+        openingHours: lead.openingHours,
         contactName: lead.contactName,
         contactEmail: lead.contactEmail,
         contactPhone: lead.contactPhone,
@@ -472,12 +610,41 @@ export function OutreachDetailPage() {
         </div>
 
         {readiness && (
-          <div className={`lead-readiness ${readiness.ok ? "ok" : "blocked"}`} role="status">
-            {readiness.ok
-              ? readiness.dryRun
-                ? "Ready to send (dry run is on — message will queue, not go live)."
-                : "Ready to send."
-              : `Not ready: ${readinessBlocked.join("; ") || "fix blockers"}`}
+          <div
+            className={`lead-readiness ${
+              readiness.reasons.length
+                ? "blocked"
+                : readiness.warnings.length
+                  ? "warnings"
+                  : "ok"
+            }`}
+            role="status"
+          >
+            {readiness.reasons.length > 0 ? (
+              <>
+                <div>Not ready:</div>
+                <ul className="reason-list">
+                  {readinessBlocked.map((l) => (
+                    <li key={l}>{l}</li>
+                  ))}
+                </ul>
+              </>
+            ) : readiness.warnings.length > 0 ? (
+              <>
+                <div>Ready after you check these:</div>
+                <ul className="reason-list">
+                  {(readiness.warningLabels.length ? readiness.warningLabels : readiness.warnings).map(
+                    (l) => (
+                      <li key={l}>{l}</li>
+                    )
+                  )}
+                </ul>
+              </>
+            ) : readiness.dryRun ? (
+              "Ready to send (dry run is on — message will queue, not go live)."
+            ) : (
+              "Ready to send."
+            )}
           </div>
         )}
       </section>
@@ -494,6 +661,18 @@ export function OutreachDetailPage() {
             className="btn btn-primary"
             onDone={() => void load()}
           />
+          {readiness?.reasons.some(
+            (r) => r === "not_corporate_subscriber" || r === "missing_contact_email"
+          ) ? (
+            <ConsentCallForm
+              lead={lead}
+              onLeadUpdated={(updated) => {
+                setLead(updated);
+                void loadReadiness(updated.id, updated);
+              }}
+              onError={setError}
+            />
+          ) : null}
         </div>
         <div className="lead-action-bar-secondary">
           <button
@@ -585,6 +764,22 @@ export function OutreachDetailPage() {
               id="lead-postcode"
               value={lead.postcode ?? ""}
               onChange={(e) => setLead({ ...lead, postcode: e.target.value || null })}
+            />
+          </div>
+          <div className="field" style={{ gridColumn: "1 / -1" }}>
+            <label htmlFor="lead-address">Address</label>
+            <input
+              id="lead-address"
+              value={lead.address ?? ""}
+              onChange={(e) => setLead({ ...lead, address: e.target.value || null })}
+            />
+          </div>
+          <div className="field" style={{ gridColumn: "1 / -1" }}>
+            <label htmlFor="lead-opening-hours">Opening hours</label>
+            <input
+              id="lead-opening-hours"
+              value={lead.openingHours ?? ""}
+              onChange={(e) => setLead({ ...lead, openingHours: e.target.value || null })}
             />
           </div>
           <div className="field">

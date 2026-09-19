@@ -7,7 +7,9 @@ import { statusAfterDemoReady } from "../shared/demoStatus";
 import { normalizeBusinessKey, planBulkUpserts } from "./outreach/bulkUpsert";
 import { canAutoSend } from "./outreach/canAutoSend";
 import { getPersistedOutreach, pickObservation } from "./outreach/copy";
+import { demoAuditScore } from "./outreach/qualityGate";
 import {
+  isIndividualSubscriber,
   shouldAutoCorporate,
   shouldAutoVerifyEmail,
 } from "./outreach/sendFlags";
@@ -49,6 +51,7 @@ function mapLead(row: LeadRow): Lead {
     location: (row.location as string) ?? null,
     postcode: (row.postcode as string) ?? null,
     address: (row.address as string) ?? null,
+    openingHours: (row.opening_hours as string) ?? null,
     contactName: (row.contact_name as string) ?? null,
     contactEmail: (row.contact_email as string) ?? null,
     contactPhone: (row.contact_phone as string) ?? null,
@@ -86,7 +89,13 @@ function mapLead(row: LeadRow): Lead {
     reviewReasons: Array.isArray(row.review_reasons) ? (row.review_reasons as string[]) : [],
     customSubject: (row.custom_subject as string) ?? null,
     customBody: (row.custom_body as string) ?? null,
+    observationOverride: (row.observation_override as string) ?? null,
     draftUpdatedAt: row.draft_updated_at ? String(row.draft_updated_at) : null,
+    consentStatus: String(row.consent_status ?? "none"),
+    consentAt: row.consent_at ? String(row.consent_at) : null,
+    consentNote: (row.consent_note as string) ?? null,
+    consentEmail: (row.consent_email as string) ?? null,
+    warmSendAt: row.warm_send_at ? String(row.warm_send_at) : null,
     contactRoute: contactRoute({
       contactEmail: (row.contact_email as string) ?? null,
       contactPhone: (row.contact_phone as string) ?? null,
@@ -309,11 +318,9 @@ export async function createLead(sql: Sql, input: CreateLead): Promise<Lead> {
   const slug = input.slug || slugifyName(input.businessName);
   const entityType = input.entityType ?? "unknown";
   const corporate = shouldAutoCorporate({
-    contactEmail: input.contactEmail,
-    corporateSubscriber: Boolean(input.corporateSubscriber),
     entityType,
     companiesHouseNumber: input.companiesHouseNumber,
-    hasWebsite: input.hasWebsite,
+    chStatus: input.chStatus,
   });
   const emailVerified =
     Boolean(input.emailVerified) || shouldAutoVerifyEmail(input.contactEmail);
@@ -372,6 +379,7 @@ export async function updateLead(sql: Sql, id: number, updates: UpdateLead): Pro
   if (updates.location !== undefined) add("location", updates.location);
   if (updates.postcode !== undefined) add("postcode", updates.postcode);
   if (updates.address !== undefined) add("address", updates.address);
+  if (updates.openingHours !== undefined) add("opening_hours", updates.openingHours);
   if (updates.contactName !== undefined) add("contact_name", updates.contactName);
   if (updates.contactEmail !== undefined) add("contact_email", updates.contactEmail);
   if (updates.contactPhone !== undefined) add("contact_phone", updates.contactPhone);
@@ -384,7 +392,10 @@ export async function updateLead(sql: Sql, id: number, updates: UpdateLead): Pro
     add("companies_house_number", updates.companiesHouseNumber);
   }
   if (updates.entityType !== undefined) add("entity_type", updates.entityType);
-  if (updates.corporateSubscriber !== undefined) {
+  const nextEntity = updates.entityType ?? existing.entityType;
+  if (isIndividualSubscriber(nextEntity)) {
+    add("corporate_subscriber", false);
+  } else if (updates.corporateSubscriber !== undefined) {
     add("corporate_subscriber", updates.corporateSubscriber);
   }
   if (updates.chStatus !== undefined) add("ch_status", updates.chStatus);
@@ -412,6 +423,9 @@ export async function updateLead(sql: Sql, id: number, updates: UpdateLead): Pro
       add("custom_body", updates.customBody);
     }
     add("draft_updated_at", new Date().toISOString());
+  }
+  if (updates.observationOverride !== undefined) {
+    add("observation_override", updates.observationOverride);
   }
 
   if (becomingReady) {
@@ -536,13 +550,10 @@ export async function bulkUpsertLeads(
         }
         // Prefer auto / existing true over pipeline false for PECR + verified flags.
         const corporateSubscriber = shouldAutoCorporate({
-          contactEmail: input.contactEmail ?? existing.contactEmail,
-          corporateSubscriber:
-            Boolean(input.corporateSubscriber) || existing.corporateSubscriber,
           entityType: input.entityType ?? existing.entityType,
           companiesHouseNumber:
             input.companiesHouseNumber ?? existing.companiesHouseNumber,
-          hasWebsite: input.hasWebsite ?? existing.hasWebsite,
+          chStatus: input.chStatus ?? existing.chStatus,
         });
         const emailVerified =
           Boolean(input.emailVerified) ||
@@ -722,6 +733,7 @@ export type LeadMessageRow = {
   createdAt: string;
   attempts: number;
   lastAttemptAt: string | null;
+  acknowledgedWarnings: string[];
 };
 
 /** Cap on retries for the same idempotency key (failed/queued). */
@@ -747,6 +759,9 @@ function mapLeadMessage(r: LeadRow): LeadMessageRow {
     createdAt: String(r.created_at),
     attempts: Number(r.attempts ?? 1),
     lastAttemptAt: r.last_attempt_at ? String(r.last_attempt_at) : null,
+    acknowledgedWarnings: Array.isArray(r.acknowledged_warnings)
+      ? (r.acknowledged_warnings as string[])
+      : [],
   };
 }
 
@@ -996,7 +1011,7 @@ export async function getInitialOutboundProviderId(
     SELECT provider_message_id FROM lead_messages
     WHERE lead_id = ${leadId}
       AND direction = 'out'
-      AND template_id IN ('initial', 'custom')
+      AND template_id IN ('initial', 'custom', 'warm_initial', 'warm_followup')
       AND provider_message_id IS NOT NULL
       AND provider_message_id <> ''
     ORDER BY created_at ASC
@@ -1019,7 +1034,7 @@ export async function insertLeadMessage(
   sql: Sql,
   input: {
     leadId: number;
-    direction: "out" | "in";
+    direction: "out" | "in" | "note";
     channel: "email" | "form" | "phone";
     subject?: string | null;
     body?: string | null;
@@ -1030,19 +1045,20 @@ export async function insertLeadMessage(
     status: string;
     sentAt?: string | null;
     error?: string | null;
+    acknowledgedWarnings?: string[];
   }
 ): Promise<LeadMessageRow> {
   const rows = (await sql`
     INSERT INTO lead_messages (
       lead_id, direction, channel, subject, body, template_id, variant,
       provider_message_id, idempotency_key, status, sent_at, error,
-      attempts, last_attempt_at
+      attempts, last_attempt_at, acknowledged_warnings
     ) VALUES (
       ${input.leadId}, ${input.direction}, ${input.channel}, ${input.subject ?? null},
       ${input.body ?? null}, ${input.templateId ?? null}, ${input.variant ?? null},
       ${input.providerMessageId ?? null}, ${input.idempotencyKey ?? null}, ${input.status},
       ${input.sentAt ?? null}, ${input.error ?? null},
-      1, now()
+      1, now(), ${input.acknowledgedWarnings ?? []}
     )
     RETURNING *
   `) as LeadRow[];
@@ -1062,6 +1078,7 @@ export async function updateLeadMessageAttempt(
     status: string;
     sentAt?: string | null;
     error?: string | null;
+    acknowledgedWarnings?: string[];
   }
 ): Promise<LeadMessageRow> {
   const rows = (await sql`
@@ -1074,6 +1091,7 @@ export async function updateLeadMessageAttempt(
       status = ${input.status},
       sent_at = ${input.sentAt ?? null},
       error = ${input.error ?? null},
+      acknowledged_warnings = ${input.acknowledgedWarnings ?? []},
       attempts = attempts + 1,
       last_attempt_at = now()
     WHERE id = ${id}
@@ -1086,9 +1104,72 @@ export async function updateLeadMessageAttempt(
 export async function findLeadByEmail(sql: Sql, email: string): Promise<Lead | null> {
   const value = email.trim().toLowerCase();
   const rows = (await sql`
-    SELECT * FROM leads WHERE lower(contact_email) = ${value} ORDER BY updated_at DESC LIMIT 1
+    SELECT * FROM leads
+    WHERE lower(contact_email) = ${value}
+       OR lower(consent_email) = ${value}
+    ORDER BY updated_at DESC
+    LIMIT 1
   `) as LeadRow[];
   return rows[0] ? mapLead(rows[0]) : null;
+}
+
+export async function countWarmOutbound(sql: Sql, leadId: number): Promise<number> {
+  const rows = (await sql`
+    SELECT count(*)::int AS n FROM lead_messages
+    WHERE lead_id = ${leadId}
+      AND direction = 'out'
+      AND template_id IN ('warm_initial', 'warm_followup')
+      AND status IN ('sent', 'delivered')
+  `) as { n: number }[];
+  return rows[0]?.n ?? 0;
+}
+
+export async function listDueWarmSends(sql: Sql): Promise<Lead[]> {
+  const rows = (await sql`
+    SELECT * FROM leads
+    WHERE warm_send_at IS NOT NULL AND warm_send_at <= now()
+    ORDER BY warm_send_at ASC
+    LIMIT 100
+  `) as LeadRow[];
+  return rows.map(mapLead);
+}
+
+export async function setWarmSendAt(
+  sql: Sql,
+  id: number,
+  at: string | null
+): Promise<void> {
+  await sql`UPDATE leads SET warm_send_at = ${at}, updated_at = now() WHERE id = ${id}`;
+}
+
+export async function recordLeadConsent(
+  sql: Sql,
+  id: number,
+  input: { email: string; note: string; written?: boolean }
+): Promise<Lead | null> {
+  const existing = await getLeadById(sql, id);
+  if (!existing) return null;
+  const status = input.written ? "written_reply" : "verbal_call";
+  const email = input.email.trim().toLowerCase();
+  await sql`
+    UPDATE leads SET
+      consent_status = ${status},
+      consent_at = now(),
+      consent_note = ${input.note},
+      consent_email = ${email},
+      updated_at = now()
+    WHERE id = ${id}
+  `;
+  await insertLeadMessage(sql, {
+    leadId: id,
+    direction: "note",
+    channel: "phone",
+    subject: `consent:${status}`,
+    body: input.note,
+    status: "delivered",
+    sentAt: new Date().toISOString(),
+  });
+  return getLeadById(sql, id);
 }
 
 export async function getLeadStats(sql: Sql) {
@@ -1128,6 +1209,7 @@ export function leadGateInput(
     pickObservation({
       websiteUrl: lead.websiteUrl,
       audit,
+      observationOverride: lead.observationOverride,
     }).signal;
   return {
     priorityScore: lead.priorityScore,
@@ -1141,6 +1223,8 @@ export function leadGateInput(
     businessName: lead.businessName,
     industry: lead.industry,
     observationSignal,
+    hasCustomDraft: Boolean(lead.customSubject?.trim() && lead.customBody?.trim()),
+    demoAuditScore: demoAuditScore(audit),
     templateRequiresIndustry: false,
     templateRequiresLocation: false,
     location: lead.location,

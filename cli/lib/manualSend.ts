@@ -5,7 +5,7 @@
  * --yes skips the typed confirm only — never PECR / freemail / suppression / demo gates.
  */
 
-import { filterManualHardReasons, labelGateReason } from "../../shared/manualGate";
+import { labelGateReason } from "../../shared/manualGate";
 
 export function parseSendIds(positional: string[]): { ok: true; id: number } | { ok: false; error: string } {
   if (positional.includes("--all") || positional.some((p) => p === "all")) {
@@ -43,10 +43,29 @@ export function formatEmailPreview(opts: {
   ].join("\n");
 }
 
-export function formatGateResult(reasons: string[]): string {
-  const hard = filterManualHardReasons(reasons);
-  if (hard.length === 0) return "Gate: PASS";
-  return `Gate: FAIL\n${hard.map((r) => `  - ${labelGateReason(r)}`).join("\n")}`;
+export function formatGateResult(blocking: string[], warnings: string[] = []): string {
+  const lines: string[] = [];
+  if (blocking.length > 0) {
+    lines.push("Gate: FAIL");
+    for (const r of blocking) lines.push(`  - ${labelGateReason(r)}`);
+  } else if (warnings.length > 0) {
+    lines.push("Gate: WARN");
+    for (const r of warnings) lines.push(`  - ${labelGateReason(r)}`);
+    lines.push("Pass --ack-warnings=<codes> or --ack-warnings=all after you've checked these.");
+  } else {
+    return "Gate: PASS";
+  }
+  return lines.join("\n");
+}
+
+export function parseAckWarnings(raw: string | undefined): string[] {
+  if (!raw?.trim()) return [];
+  const trimmed = raw.trim();
+  if (trimmed.toLowerCase() === "all") return ["all"];
+  return trimmed
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 export function confirmBusinessName(

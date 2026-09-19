@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   absoluteFollowupAt,
   bodyWordCountBeforeFooter,
+  demoProofLine,
   demoUrlFor,
   greeting,
   pickObservation,
@@ -121,6 +122,16 @@ describe("pickObservation", () => {
     expect(r.line.toLowerCase()).not.toContain("a lot of firms");
     expect(r.line).toContain("built on wordpress");
   });
+
+  it("observation override is custom, not generic", () => {
+    const r = pickObservation({
+      websiteUrl: "https://example.co.uk",
+      audit: {},
+      observationOverride: "The MOT reminder form still stops at 2020.",
+    });
+    expect(r.signal).toBe("custom");
+    expect(r.line).toBe("The MOT reminder form still stops at 2020.");
+  });
 });
 
 describe("pickSubjectVariant", () => {
@@ -194,5 +205,28 @@ describe("postal gate", () => {
     expect(resolvePostalAddress({ postalAddress: null }, { OUTREACH_POSTAL_ADDRESS: "UK" })).toBe(
       "UK"
     );
+  });
+});
+
+describe("demo proof line", () => {
+  it("uses the stronger line only when address and opening hours are stored", () => {
+    expect(demoProofLine({ address: null, openingHours: null })).toBe(
+      "It's built from your own site's content, not a generic mockup."
+    );
+    expect(
+      demoProofLine({ address: "1 High St, Havant", openingHours: "Mon–Sat 9–5" })
+    ).toBe("That's your real services, address and opening hours — not a generic mockup.");
+    const withHours = renderInitial({
+      lead: baseLead({ address: "1 High St", openingHours: "9–5" }),
+      postalAddress: "UK",
+      unsubscribeUrl: "https://x/u",
+    });
+    expect(withHours.text).toContain("That's your real services, address and opening hours");
+    const without = renderInitial({
+      lead: baseLead(),
+      postalAddress: "UK",
+      unsubscribeUrl: "https://x/u",
+    });
+    expect(without.text).toContain("It's built from your own site's content");
   });
 });

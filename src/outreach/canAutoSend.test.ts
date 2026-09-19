@@ -91,14 +91,13 @@ describe("canAutoSend", () => {
 });
 
 describe("quality hard blocks (Task 17)", () => {
-  it("foo.co.uk blocks auto-send; manual/Approve can override business_name_implausible", () => {
+  it("foo.co.uk blocks auto-send; manual treats business_name_implausible as a warning", () => {
     expect(isBusinessNameDomain("foo.co.uk")).toBe(true);
     expect(isBusinessNameImplausible("foo.co.uk")).toBe(true);
     const r = canAutoSend({ ...baseLead, businessName: "foo.co.uk" }, baseSettings, 0);
     expect(r.ok).toBe(false);
     expect(r.reasons).toContain("business_name_implausible");
-    expect(filterManualHardReasons(r.reasons)).not.toContain("business_name_implausible");
-    expect(filterManualHardReasons(["business_name_implausible"])).toEqual([]);
+    expect(filterManualHardReasons(r.reasons)).toContain("business_name_implausible");
   });
 
   it("7-word SEO name blocks with business_name_implausible", () => {
@@ -131,14 +130,28 @@ describe("quality hard blocks (Task 17)", () => {
     expect(isBusinessNameImplausible("Victor Stewart", "Southampton")).toBe(false);
   });
 
-  it("generic observation blocks; a specific signal does not", () => {
+  it("generic observation blocks autosend unless a custom draft is present", () => {
     const bad = canAutoSend({ ...baseLead, observationSignal: "generic" }, baseSettings, 0);
     expect(bad.reasons).toContain("generic_observation");
     expect(filterManualHardReasons(bad.reasons)).toContain("generic_observation");
 
+    const drafted = canAutoSend(
+      { ...baseLead, observationSignal: "generic", hasCustomDraft: true },
+      baseSettings,
+      0
+    );
+    expect(drafted.reasons).not.toContain("generic_observation");
+
     const good = canAutoSend({ ...baseLead, observationSignal: "footer_year" }, baseSettings, 0);
     expect(good.reasons).not.toContain("generic_observation");
     expect(good.ok).toBe(true);
+  });
+
+  it("demo_audit_score_low when stored score is below 90; missing score is fine", () => {
+    const bad = canAutoSend({ ...baseLead, demoAuditScore: 72 }, baseSettings, 0);
+    expect(bad.reasons).toContain("demo_audit_score_low");
+    const ok = canAutoSend({ ...baseLead, demoAuditScore: null }, baseSettings, 0);
+    expect(ok.reasons).not.toContain("demo_audit_score_low");
   });
 
   it("postal address Humza Butt, United Kingdom blocks; real UK address passes", () => {
@@ -284,7 +297,8 @@ describe("quality hard blocks (Task 17)", () => {
     expect(fromModal.subject).toBe(fromRender.subject);
     expect(fromModal.text).toBe(fromRender.text);
     expect(fromModal.text).toContain("--\nHumza Butt ·");
-    expect(sendConfirmBlocked(["business_name_implausible"])).toBe(true);
+    expect(sendConfirmBlocked(["business_name_implausible"])).toBe(false);
+    expect(sendConfirmBlocked(["not_corporate_subscriber"])).toBe(true);
     expect(sendConfirmBlocked([])).toBe(false);
   });
 });

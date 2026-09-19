@@ -52,8 +52,23 @@ export function mergeLeadUpdate(
   for (const [key, value] of Object.entries(incoming)) {
     if (value === undefined) continue;
     if (PROTECTED.has(key)) continue;
-    // Re-pushes must not clear PECR / verified flags a human (or prior push) set.
-    if (NO_DOWNGRADE.has(key) && value === false && existing[key] === true) continue;
+    // Re-pushes must not clear PECR / verified flags a human (or prior push) set,
+    // except sole traders / partnerships — those must never stay corporate.
+    if (NO_DOWNGRADE.has(key) && value === false && existing[key] === true) {
+      const incomingEntity = String(
+        incoming.entityType ?? incoming.entity_type ?? ""
+      ).toLowerCase();
+      const corporateKey =
+        key === "corporateSubscriber" || key === "corporate_subscriber";
+      if (
+        corporateKey &&
+        (incomingEntity === "sole_trader" || incomingEntity === "partnership")
+      ) {
+        out[key] = value;
+        continue;
+      }
+      continue;
+    }
     out[key] = value;
   }
   return out;

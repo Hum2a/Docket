@@ -78,9 +78,12 @@ describe("manual send CLI helpers", () => {
   });
 
   it("gate result PASS when only operational skips remain", () => {
-    expect(formatGateResult(["priority_below_threshold", "auto_send_disabled"])).toBe(
-      "Gate: PASS"
-    );
+    expect(formatGateResult([])).toBe("Gate: PASS");
+  });
+
+  it("gate result WARN for quality warnings and FAIL for PECR", () => {
+    expect(formatGateResult([], ["priority_below_threshold"])).toMatch(/^Gate: WARN/);
+    expect(formatGateResult(["not_corporate_subscriber"])).toMatch(/^Gate: FAIL/);
   });
 
   it("--yes skip list does not include PECR / freemail / suppression / demo", () => {
@@ -94,13 +97,15 @@ describe("manual send CLI helpers", () => {
       "demo_not_ready",
     ]);
     expect(hard).toEqual([
+      "priority_below_threshold",
+      "business_name_implausible",
       "not_corporate_subscriber",
       "freemail_address",
       "lead_suppressed",
       "email_unverified",
       "demo_not_ready",
     ]);
-    expect(MANUAL_SKIP_REASONS).toContain("business_name_implausible");
+    expect(MANUAL_SKIP_REASONS).not.toContain("business_name_implausible");
     for (const r of [
       "not_corporate_subscriber",
       "freemail_address",
@@ -117,6 +122,11 @@ describe("CLI send registry", () => {
   it("includes send as a single-lead command", () => {
     expect(LEAD_COMMANDS).toContain("send");
     expect(leadEndpointFor("send", 5).path).toBe("/api/leads/5/send");
+  });
+
+  it("includes consent as a single-lead command", () => {
+    expect(LEAD_COMMANDS).toContain("consent");
+    expect(leadEndpointFor("consent", 104).path).toBe("/api/leads/104/consent");
   });
 
   it("has no batch autosend/approve/sequence verbs", () => {

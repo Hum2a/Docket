@@ -9,8 +9,8 @@ import {
   type CopyLeadInput,
   type RenderedOutreach,
 } from "./copy";
+import { classifyGateReasons, labelGateReason } from "../../shared/manualGate";
 import { isQualityHardReason } from "./qualityGate";
-import { labelGateReason } from "../../shared/manualGate";
 
 export type SendConfirmPreviewInput = {
   lead: CopyLeadInput;
@@ -40,9 +40,9 @@ export function buildSendConfirmPreview(input: SendConfirmPreviewInput): Rendere
   );
 }
 
-/** Confirm must stay disabled when any quality hard-block (or other hard reason) remains. */
-export function sendConfirmBlocked(reasons: string[]): boolean {
-  return reasons.length > 0;
+/** Confirm stays disabled while legal/ops blockers remain. Warnings use a tick-box. */
+export function sendConfirmBlocked(reasons: string[], hasConsent = false): boolean {
+  return classifyGateReasons(reasons, { hasConsent, skipOperational: true }).blocking.length > 0;
 }
 
 export function sendConfirmBlockLabels(reasons: string[]): string[] {

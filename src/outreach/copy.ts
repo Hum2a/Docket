@@ -17,7 +17,8 @@ export type ObservationSignal =
   | "cms_outdated"
   | "footer_year"
   | "builder"
-  | "generic";
+  | "generic"
+  | "custom";
 
 export type SubjectVariant = "A" | "B" | "C" | "D";
 
@@ -42,7 +43,29 @@ export type CopyLeadInput = {
   demoExpiresAt: string | null;
   offerAmount: number;
   audit: Record<string, unknown>;
+  address?: string | null;
+  openingHours?: string | null;
+  observationOverride?: string | null;
 };
+
+export function toCopyLead(lead: CopyLeadInput): CopyLeadInput {
+  return {
+    id: lead.id,
+    businessName: lead.businessName,
+    slug: lead.slug,
+    industry: lead.industry,
+    location: lead.location,
+    contactName: lead.contactName,
+    websiteUrl: lead.websiteUrl,
+    demoUrl: lead.demoUrl,
+    demoExpiresAt: lead.demoExpiresAt,
+    offerAmount: Number(lead.offerAmount || 500),
+    audit: lead.audit || {},
+    address: lead.address ?? null,
+    openingHours: lead.openingHours ?? null,
+    observationOverride: lead.observationOverride ?? null,
+  };
+}
 
 export type RenderedOutreach = {
   subject: string;
@@ -180,9 +203,13 @@ function psiMobileScore(audit: Record<string, unknown>): number | null {
 }
 
 export function pickObservation(
-  lead: Pick<CopyLeadInput, "websiteUrl" | "audit">,
+  lead: Pick<CopyLeadInput, "websiteUrl" | "audit" | "observationOverride">,
   now: Date = new Date()
 ): { signal: ObservationSignal; line: string } {
+  const override = lead.observationOverride?.trim();
+  if (override) {
+    return { signal: "custom", line: override };
+  }
   const audit = lead.audit || {};
   const domain = bareDomain(lead.websiteUrl);
 
@@ -317,10 +344,20 @@ export function consequenceLine(signal: ObservationSignal): string {
     case "footer_year":
     case "builder":
     case "broken_links":
+    case "custom":
     case "generic":
     default:
       return "Nothing wrong with the current one — this just looks like the firm you are now.";
   }
+}
+
+export function demoProofLine(
+  lead: Pick<CopyLeadInput, "address" | "openingHours">
+): string {
+  if (lead.address?.trim() && lead.openingHours?.trim()) {
+    return "That's your real services, address and opening hours — not a generic mockup.";
+  }
+  return "It's built from your own site's content, not a generic mockup.";
 }
 
 export function isMobileSpeedSignal(signal: ObservationSignal): boolean {
@@ -464,7 +501,7 @@ I've already built you one:
 
 ${demo}
 
-That's your real services, address and opening hours — not a generic mockup.
+${demoProofLine(lead)}
 Worth opening on your phone.
 
 £${amount} flat and it's live on your own domain. If it's not for you, no harm done.

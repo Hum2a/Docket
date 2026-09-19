@@ -43,6 +43,8 @@ const SYNC_KEYS = [
   "OUTREACH_FROM",
   "OUTREACH_REPLY_TO",
   "OUTREACH_POSTAL_ADDRESS",
+  "OUTREACH_PERSONAL_FROM",
+  "OUTREACH_PERSONAL_REPLY_TO",
   "RESEND_INBOUND_SECRET",
   "UNSUBSCRIBE_SIGNING_KEY",
 ];
@@ -57,6 +59,8 @@ const DEFAULTS = {
   OUTREACH_FROM: "Outreach <outreach@Humza-Butt.space>",
   OUTREACH_REPLY_TO: "outreach@Humza-Butt.space",
   OUTREACH_POSTAL_ADDRESS: "Humza Butt, United Kingdom",
+  OUTREACH_PERSONAL_FROM: "Humza Butt <humza@humza-butt.space>",
+  OUTREACH_PERSONAL_REPLY_TO: "humza@humza-butt.space",
 };
 
 function parseDevVars(text) {

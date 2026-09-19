@@ -47,6 +47,7 @@ import {
   runOutreachAutosend,
   runOutreachSequence,
 } from "./outreach-routes";
+import { runQueuedWarmSends } from "./outreach/warmSend";
 
 type AppContext = { Bindings: Env };
 
@@ -529,7 +530,9 @@ export default {
     ctx.waitUntil(
       (async () => {
         if (cron === "0 9 * * 1-5") {
-          await runOutreachAutosend(env, "https://jobtracker.humza-butt.space");
+          const origin = "https://jobtracker.humza-butt.space";
+          await runQueuedWarmSends(env, origin);
+          await runOutreachAutosend(env, origin);
           return;
         }
         if (cron === "0 10 * * 1-5") {

@@ -21,6 +21,8 @@ export interface Env {
   OUTREACH_FROM?: string;
   OUTREACH_REPLY_TO?: string;
   OUTREACH_POSTAL_ADDRESS?: string;
+  OUTREACH_PERSONAL_FROM?: string;
+  OUTREACH_PERSONAL_REPLY_TO?: string;
   RESEND_INBOUND_SECRET?: string;
   UNSUBSCRIBE_SIGNING_KEY?: string;
   ASSETS: Fetcher;

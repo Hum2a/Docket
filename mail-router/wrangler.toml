@@ -1,0 +1,10 @@
+name = "docket-mail-router"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+
+# Secrets (wrangler secret put, from this directory):
+#   FORWARD_TO
+#   RESEND_INBOUND_SECRET
+#
+# Email Routing: humza@humza-butt.space → this worker.
+# Do not change MX until you have checked `dig MX humza-butt.space`.

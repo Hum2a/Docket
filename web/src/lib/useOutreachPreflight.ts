@@ -10,6 +10,8 @@ export const PREFLIGHT_HINTS: Record<PreflightCheckKey, string> = {
   unsubscribe_key_set: "Set UNSUBSCRIBE_SIGNING_KEY via npm run secrets:sync.",
   resend_key_set: "Set RESEND_API_KEY via npm run secrets:resend.",
   reply_to_set: "Optional: set reply-to in settings or OUTREACH_REPLY_TO.",
+  personal_from_set: "Set OUTREACH_PERSONAL_FROM (defaults to Humza Butt <humza@humza-butt.space>).",
+  personal_from_domain_verified: "Verify humza-butt.space in Resend (warning only).",
 };
 
 export const PREFLIGHT_LABELS: Record<PreflightCheckKey, string> = {
@@ -20,6 +22,8 @@ export const PREFLIGHT_LABELS: Record<PreflightCheckKey, string> = {
   unsubscribe_key_set: "Unsubscribe signing key",
   resend_key_set: "Resend API key",
   reply_to_set: "Reply-to (optional)",
+  personal_from_set: "Personal from-address",
+  personal_from_domain_verified: "Personal from-domain verified in Resend",
 };
 
 export function blockingTooltip(blocking: PreflightCheckKey[]): string {

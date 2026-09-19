@@ -28,7 +28,7 @@ export const CONTACT_ROUTE_META: Record<
     label: "Freemail",
     className: "contact-route contact-route-freemail",
     title:
-      "Consumer mailbox — the send gate always refuses freemail (PECR / deliverability).",
+      "Freemail — cold send is blocked. Lawful only with recorded consent (warm lane).",
   },
   phone: { label: "Phone", className: "contact-route contact-route-phone" },
   form: { label: "Form", className: "contact-route contact-route-form" },

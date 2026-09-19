@@ -22,6 +22,7 @@ import {
   deleteLeadReminder,
   findLeadByEmail,
   getLeadById,
+  recordLeadConsent,
   getLeadStats,
   getOutreachSettings,
   insertLeadMessage,
@@ -36,15 +37,25 @@ import {
   isSuppressed,
   leadGateInput,
   setLeadReminderCompleted,
+  setWarmSendAt,
   updateLead,
   updateOutreachSettings,
 } from "./outreach-db";
-import { bareDomain, resolvePostalAddress } from "./outreach/copy";
+import { bareDomain, resolvePostalAddress, toCopyLead } from "./outreach/copy";
 import { buildSendConfirmPreview } from "./outreach/sendConfirm";
 import { canAutoSend, emailDomain } from "./outreach/canAutoSend";
+import { canWarmSend, hasRecordedConsent, warmLaneWarnings } from "./outreach/canWarmSend";
 import { buildOutreachPreflight } from "./outreach/preflight";
 import { validateCustomBody } from "./outreach/draft";
-import { filterManualHardReasons, labelGateReason } from "../shared/manualGate";
+import { nextWeekdayNineLondon } from "./outreach/warmQueue";
+import {
+  renderWarmCopy,
+  resolvePersonalFrom,
+  resolvePersonalReplyTo,
+  sendWarmOutreach,
+  warmGateExtras,
+} from "./outreach/warmSend";
+import { classifyGateReasons, labelGateReason, unacknowledgedWarnings } from "../shared/manualGate";
 import { sendFlagPatch } from "./outreach/sendFlags";
 import { sendLeadOutreach, signUnsubscribeToken, verifyUnsubscribeToken } from "./outreach-send";
 import { resolveNotifyRecipients } from "./db";
@@ -58,6 +69,12 @@ async function requireApiKey(c: Context<AppContext>, next: Next) {
     return c.json({ error: "unauthorized: missing or invalid X-Api-Key header" }, 401);
   }
   await next();
+}
+
+function parseAcknowledgedWarnings(body: Record<string, unknown>): string[] {
+  const raw = body.acknowledgedWarnings;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((x): x is string => typeof x === "string" && x.trim() !== "");
 }
 
 export const outreachApp = new Hono<AppContext>();
@@ -175,14 +192,34 @@ outreachApp.get("/api/leads/:id/outreach-preview", requireApiKey, async (c) => {
   if (!secret) {
     return c.json({ error: "unsubscribe_key_not_configured" }, 400);
   }
-  const token = await signUnsubscribeToken(
-    secret,
-    lead.id,
-    lead.contactEmail || "preview@example.com"
-  );
+  const lane = c.req.query("lane");
+  const previewEmail =
+    lane === "warm"
+      ? lead.consentEmail || "preview@example.com"
+      : lead.contactEmail || "preview@example.com";
+  const token = await signUnsubscribeToken(secret, lead.id, previewEmail);
   const origin = new URL(c.req.url).origin;
   const unsubUrl = `${origin}/api/unsubscribe?token=${encodeURIComponent(token)}`;
-  const copyLead = {
+  if (lane === "warm") {
+    const extras = await warmGateExtras(sql, lead);
+    const rendered = renderWarmCopy({
+      lead,
+      postalAddress: postal,
+      unsubscribeUrl: unsubUrl,
+      warmOutboundCount: extras.warmOutboundCount,
+    });
+    return c.json({
+      subject: rendered.subject,
+      text: rendered.text,
+      bodyBeforeFooter: rendered.text.split(/\n--\n/)[0]?.trim() ?? "",
+      templateId: rendered.templateId,
+      source: "custom",
+      from: resolvePersonalFrom(c.env),
+      to: lead.consentEmail,
+      replyTo: resolvePersonalReplyTo(c.env),
+    });
+  }
+  const copyLead = toCopyLead({
     id: lead.id,
     businessName: lead.businessName,
     slug: lead.slug,
@@ -194,7 +231,10 @@ outreachApp.get("/api/leads/:id/outreach-preview", requireApiKey, async (c) => {
     demoExpiresAt: lead.demoExpiresAt,
     offerAmount: Number(lead.offerAmount || 500),
     audit: lead.audit || {},
-  };
+    address: lead.address,
+    openingHours: lead.openingHours,
+    observationOverride: lead.observationOverride,
+  });
   const rendered = buildSendConfirmPreview({
     lead: copyLead,
     postalAddress: postal,
@@ -211,6 +251,28 @@ outreachApp.get("/api/leads/:id/outreach-preview", requireApiKey, async (c) => {
     source: rendered.templateId === "custom" ? "custom" : "generated",
     signal: rendered.signal,
   });
+});
+
+outreachApp.post("/api/leads/:id/consent", requireApiKey, async (c) => {
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id)) return c.json({ error: "id must be an integer" }, 400);
+  let body: { email?: string; note?: string; written?: boolean } = {};
+  try {
+    body = (await c.req.json()) as { email?: string; note?: string; written?: boolean };
+  } catch {
+    return c.json({ error: "body must be valid JSON" }, 400);
+  }
+  const email = (body.email || "").trim();
+  const note = (body.note || "").trim();
+  if (!email || !note) return c.json({ error: "email and note are required" }, 400);
+  const sql = getSql(c.env.DATABASE_URL);
+  const lead = await recordLeadConsent(sql, id, {
+    email,
+    note,
+    written: body.written === true,
+  });
+  if (!lead) return c.json({ error: "not found" }, 404);
+  return c.json(lead);
 });
 
 outreachApp.delete("/api/leads/:id", requireApiKey, async (c) => {
@@ -293,14 +355,40 @@ outreachApp.post("/api/leads/:id/send", requireApiKey, async (c) => {
   const sql = getSql(c.env.DATABASE_URL);
   let lead = await getLeadById(sql, id);
   if (!lead) return c.json({ error: "not found" }, 404);
-  const flagPatch = sendFlagPatch(lead);
-  if (Object.keys(flagPatch).length > 0) {
-    lead = (await updateLead(sql, id, flagPatch)) ?? lead;
-  }
   const settings = await getOutreachSettings(sql);
   const origin = new URL(c.req.url).origin;
   const manual = body.manual === true;
   const overrideDryRun = body.overrideDryRun === true;
+  const warm = body.warm === true;
+  const acknowledgedWarnings = parseAcknowledgedWarnings(body);
+  if (warm) {
+    if (body.queue === true) {
+      const extras = await warmGateExtras(sql, lead);
+      const gate = canWarmSend(lead, extras);
+      if (!gate.ok) return c.json({ queued: false, sent: false, reasons: gate.reasons });
+      const unacked = unacknowledgedWarnings(warmLaneWarnings(lead), acknowledgedWarnings);
+      if (unacked.length > 0) {
+        return c.json({ queued: false, sent: false, reasons: unacked });
+      }
+      const at = nextWeekdayNineLondon().toISOString();
+      await setWarmSendAt(sql, id, at);
+      return c.json({ queued: true, sent: false, warmSendAt: at, reasons: [] });
+    }
+    const result = await sendWarmOutreach({
+      sql,
+      env: c.env,
+      lead,
+      settings,
+      origin,
+      overrideDryRun,
+      acknowledgedWarnings,
+    });
+    return c.json(result);
+  }
+  const flagPatch = sendFlagPatch(lead);
+  if (Object.keys(flagPatch).length > 0) {
+    lead = (await updateLead(sql, id, flagPatch)) ?? lead;
+  }
   const result = await sendLeadOutreach({
     sql,
     env: c.env,
@@ -310,6 +398,7 @@ outreachApp.post("/api/leads/:id/send", requireApiKey, async (c) => {
     force: true,
     manual,
     overrideDryRun,
+    acknowledgedWarnings,
   });
   return c.json(result);
 });
@@ -320,12 +409,34 @@ outreachApp.get("/api/leads/:id/send-readiness", requireApiKey, async (c) => {
   const sql = getSql(c.env.DATABASE_URL);
   let lead = await getLeadById(sql, id);
   if (!lead) return c.json({ error: "not found" }, 404);
+  const settings = await getOutreachSettings(sql);
+  const preflight = await buildOutreachPreflight(settings, c.env);
+  if (c.req.query("lane") === "warm") {
+    const extras = await warmGateExtras(sql, lead);
+    const gate = canWarmSend(lead, extras);
+    const warnings = gate.ok ? warmLaneWarnings(lead) : [];
+    const blockingReasons = gate.reasons;
+    const blockingLabels = [
+      ...blockingReasons.map(labelGateReason),
+      ...preflight.warmBlocking.map(labelGateReason),
+    ];
+    return c.json({
+      ok: blockingReasons.length === 0 && preflight.warmReady,
+      reasons: blockingReasons,
+      labels: blockingReasons.map(labelGateReason),
+      warnings,
+      warningLabels: warnings.map(labelGateReason),
+      blockingReasons,
+      blocking: blockingLabels,
+      preflightReady: preflight.warmReady,
+      preflightBlocking: preflight.warmBlocking,
+      dryRun: settings.dryRun,
+    });
+  }
   const flagPatch = sendFlagPatch(lead);
   if (Object.keys(flagPatch).length > 0) {
     lead = (await updateLead(sql, id, flagPatch)) ?? lead;
   }
-  const settings = await getOutreachSettings(sql);
-  const preflight = buildOutreachPreflight(settings, c.env);
   const postal = resolvePostalAddress(settings, c.env);
   let suppressedExtra = false;
   if (lead.contactEmail) suppressedExtra = await isSuppressed(sql, lead.contactEmail);
@@ -342,15 +453,23 @@ outreachApp.get("/api/leads/:id/send-readiness", requireApiKey, async (c) => {
     },
     0
   );
-  const reasons = filterManualHardReasons(hard.reasons);
+  const classified = classifyGateReasons(hard.reasons, {
+    hasConsent: hasRecordedConsent(lead),
+    skipOperational: true,
+  });
+  const blockingReasons = classified.blocking;
+  const warnings = classified.warnings;
   const blocking = [
-    ...reasons.map(labelGateReason),
+    ...blockingReasons.map(labelGateReason),
     ...preflight.blocking.map(labelGateReason),
   ];
   return c.json({
-    ok: reasons.length === 0 && preflight.ready,
-    reasons,
-    labels: reasons.map(labelGateReason),
+    ok: blockingReasons.length === 0 && preflight.ready,
+    reasons: blockingReasons,
+    labels: blockingReasons.map(labelGateReason),
+    warnings,
+    warningLabels: warnings.map(labelGateReason),
+    blockingReasons,
     preflightReady: preflight.ready,
     preflightBlocking: preflight.blocking,
     dryRun: settings.dryRun,
@@ -360,14 +479,14 @@ outreachApp.get("/api/leads/:id/send-readiness", requireApiKey, async (c) => {
 
 outreachApp.post("/api/leads/:id/approve", requireApiKey, async (c) => {
   const id = Number(c.req.param("id"));
+  let body: Record<string, unknown> = {};
+  try {
+    body = (await c.req.json()) as Record<string, unknown>;
+  } catch {
+    body = {};
+  }
   const sql = getSql(c.env.DATABASE_URL);
-  // Approve is human attestation: PECR + email-verified, and quality name
-  // override via manual (business_name_implausible skippable after preview).
-  const lead = await updateLead(sql, id, {
-    status: "queued",
-    emailVerified: true,
-    corporateSubscriber: true,
-  });
+  const lead = await updateLead(sql, id, { status: "queued" });
   if (!lead) return c.json({ error: "not found" }, 404);
   await sql`UPDATE leads SET review_reasons = '{}', updated_at = now() WHERE id = ${id}`;
   const settings = await getOutreachSettings(sql);
@@ -381,6 +500,7 @@ outreachApp.post("/api/leads/:id/approve", requireApiKey, async (c) => {
     origin,
     force: true,
     manual: true,
+    acknowledgedWarnings: parseAcknowledgedWarnings(body),
   });
   return c.json({ approved: true, ...result });
 });
@@ -395,7 +515,7 @@ outreachApp.get("/api/outreach/settings", requireApiKey, async (c) => {
 outreachApp.get("/api/outreach/preflight", async (c) => {
   const sql = getSql(c.env.DATABASE_URL);
   const settings = await getOutreachSettings(sql);
-  return c.json(buildOutreachPreflight(settings, c.env));
+  return c.json(await buildOutreachPreflight(settings, c.env));
 });
 
 outreachApp.get("/api/outreach/messages", requireApiKey, async (c) => {
@@ -583,7 +703,10 @@ outreachApp.post("/api/outreach/autosend", requireApiKey, async (c) => {
   const origin = new URL(c.req.url).origin;
   const leads = await listLeads(sql, { limit: 500 });
   const candidates = leads
-    .filter((l) => l.status === "demo_ready" || l.status === "queued")
+    .filter(
+      (l) =>
+        (l.status === "demo_ready" || l.status === "queued") && !hasRecordedConsent(l)
+    )
     .sort((a, b) => (b.priorityScore ?? 0) - (a.priorityScore ?? 0));
 
   const results = [];
@@ -604,6 +727,7 @@ outreachApp.post("/api/outreach/sequence", requireApiKey, async (c) => {
   const due = leads.filter(
     (l) =>
       (l.status === "sent" || l.status === "followed_up") &&
+      !hasRecordedConsent(l) &&
       l.nextFollowupAt &&
       new Date(l.nextFollowupAt) <= new Date()
   );
@@ -785,7 +909,10 @@ export async function runOutreachAutosend(env: Env, origin: string) {
   const settings = await getOutreachSettings(sql);
   const leads = await listLeads(sql, { limit: 500 });
   const candidates = leads
-    .filter((l) => l.status === "demo_ready" || l.status === "queued")
+    .filter(
+      (l) =>
+        (l.status === "demo_ready" || l.status === "queued") && !hasRecordedConsent(l)
+    )
     .sort((a, b) => (b.priorityScore ?? 0) - (a.priorityScore ?? 0));
   for (const lead of candidates) {
     const sentToday = await countSentToday(sql);
@@ -801,6 +928,7 @@ export async function runOutreachSequence(env: Env, origin: string) {
   const due = leads.filter(
     (l) =>
       (l.status === "sent" || l.status === "followed_up") &&
+      !hasRecordedConsent(l) &&
       l.nextFollowupAt &&
       new Date(l.nextFollowupAt) <= new Date()
   );

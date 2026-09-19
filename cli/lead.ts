@@ -23,9 +23,11 @@ import {
   confirmBusinessName,
   formatEmailPreview,
   formatGateResult,
+  parseAckWarnings,
   parseSendIds,
   refuseDryRunWithoutOverride,
 } from "./lib/manualSend";
+import { isFreemail } from "../shared/freemail";
 import { labelGateReason } from "../shared/manualGate";
 import {
   LEAD_COMMANDS,
@@ -43,6 +45,9 @@ type Lead = Record<string, unknown> & {
   contactEmail?: string | null;
   customBody?: string | null;
   customSubject?: string | null;
+  consentEmail?: string | null;
+  consentStatus?: string | null;
+  consentNote?: string | null;
 };
 
 type Settings = {
@@ -59,12 +64,16 @@ function usage(): never {
   npm run lead -- patch <id> --set field=value [--set ...]
   npm run lead -- draft <id> --subject="..." --body-file=./draft.txt
   npm run lead -- preflight
-  npm run lead -- send <id> [--dry] [--yes] [--override-dry-run]
+  npm run lead -- consent <id> --email=<addr> --note="..." [--written]
+  npm run lead -- send <id> [--warm] [--dry] [--queue] [--yes] [--override-dry-run] [--ack-warnings=codes|all]
 
 Options:
   --base=URL   Default https://jobtracker.humza-butt.space (use http://localhost:8787 for wrangler)
-  --yes        Skip confirmation prompts (patch/draft Apply?; send typed name)
+  --yes        Skip confirmation prompts (patch/draft Apply?; send/consent typed name)
   --dry        Preview send only — never contacts Resend
+  --warm       Consent lane: send to consent_email from personal From
+  --queue      Warm only: schedule next weekday 09:00 Europe/London
+  --ack-warnings=a,b  Acknowledge quality warnings (or all). Never skips PECR.
 
 API_KEY is read from .dev.vars or the environment — never pass it on the command line.
 Send is one lead per invocation (no --all / batch).`);
@@ -184,6 +193,9 @@ async function runSend(opts: {
   const dryOnly = hasFlag(opts.argv, "dry");
   const overrideDryRun = hasFlag(opts.argv, "override-dry-run");
 
+  const warm = hasFlag(opts.argv, "warm");
+  const queue = hasFlag(opts.argv, "queue");
+  const laneQs = warm ? "?lane=warm" : "";
   const lead = await apiRequest<Lead>({
     base: opts.base,
     path: `/api/leads/${parsed.id}`,
@@ -198,26 +210,33 @@ async function runSend(opts: {
     ok: boolean;
     reasons: string[];
     labels: string[];
+    warnings?: string[];
+    warningLabels?: string[];
     preflightReady: boolean;
     preflightBlocking: string[];
     dryRun: boolean;
   }>({
     base: opts.base,
-    path: `/api/leads/${parsed.id}/send-readiness`,
+    path: `/api/leads/${parsed.id}/send-readiness${laneQs}`,
     apiKey: opts.apiKey,
   });
   const preview = await apiRequest<{
     subject: string;
     text: string;
     source: string;
+    from?: string;
+    to?: string | null;
   }>({
     base: opts.base,
-    path: `/api/leads/${parsed.id}/outreach-preview`,
+    path: `/api/leads/${parsed.id}/outreach-preview${laneQs}`,
     apiKey: opts.apiKey,
   });
 
-  const from = (settings.fromAddress || "").trim() || "(from-address not set)";
-  const to = (lead.contactEmail || "").trim() || "(no contact email)";
+  const from =
+    (preview.from || settings.fromAddress || "").trim() || "(from-address not set)";
+  const to = warm
+    ? (lead.consentEmail || preview.to || "").trim() || "(no consent email)"
+    : (lead.contactEmail || "").trim() || "(no contact email)";
   console.log(
     formatEmailPreview({
       from,
@@ -227,7 +246,7 @@ async function runSend(opts: {
     })
   );
   console.log("");
-  console.log(formatGateResult(readiness.reasons));
+  console.log(formatGateResult(readiness.reasons, readiness.warnings ?? []));
 
   if (!readiness.preflightReady) {
     console.error("Preflight not ready — blocking:");
@@ -240,6 +259,17 @@ async function runSend(opts: {
   if (readiness.reasons.length > 0) {
     console.error("Hard gate failed — not sending.");
     process.exit(1);
+  }
+
+  const ack = parseAckWarnings(pick(opts.argv, "ack-warnings"));
+  const warnings = readiness.warnings ?? [];
+  if (warnings.length > 0) {
+    const missing = warnings.filter((w) => !ack.includes("all") && !ack.includes(w));
+    if (missing.length > 0) {
+      console.error("Quality warnings need --ack-warnings (comma-separated codes or all):");
+      for (const w of missing) console.error(`  - ${w}: ${labelGateReason(w)}`);
+      process.exit(1);
+    }
   }
 
   const dryRefuse = refuseDryRunWithoutOverride(
@@ -268,6 +298,8 @@ async function runSend(opts: {
   const result = await apiRequest<{
     sent: boolean;
     dryRun: boolean;
+    queued?: boolean;
+    warmSendAt?: string;
     reasons: string[];
     messageId?: number;
   }>({
@@ -275,7 +307,7 @@ async function runSend(opts: {
     path: `/api/leads/${parsed.id}/send`,
     method: "POST",
     apiKey: opts.apiKey,
-    body: { manual: true, overrideDryRun },
+    body: { manual: true, overrideDryRun, warm, queue, acknowledgedWarnings: ack },
   });
 
   const fresh = await apiRequest<Lead>({
@@ -284,6 +316,10 @@ async function runSend(opts: {
     apiKey: opts.apiKey,
   });
 
+  if (result.queued) {
+    console.log(`Queued warm send at ${result.warmSendAt} · lead status=${fresh.status}`);
+    return;
+  }
   if (!result.sent && !result.dryRun) {
     console.error(`Send failed: ${(result.reasons || []).join(", ")}`);
     process.exit(1);
@@ -292,6 +328,53 @@ async function runSend(opts: {
     result.dryRun
       ? `Queued dry-run message id=${result.messageId ?? "?"} · lead status=${fresh.status}`
       : `Sent message id=${result.messageId ?? "?"} · lead status=${fresh.status}`
+  );
+}
+
+async function runConsent(opts: {
+  base: string;
+  apiKey: string;
+  argv: string[];
+  pos: string[];
+  yes: boolean;
+}): Promise<void> {
+  const id = Number(opts.pos[1]);
+  if (!Number.isInteger(id)) usage();
+  const email = pick(opts.argv, "email");
+  const note = pick(opts.argv, "note");
+  if (!email || !note) {
+    console.error("consent requires --email= and --note=");
+    process.exit(2);
+  }
+  const written = hasFlag(opts.argv, "written");
+  const lead = await apiRequest<Lead>({
+    base: opts.base,
+    path: `/api/leads/${id}`,
+    apiKey: opts.apiKey,
+  });
+  console.log(`Lead #${lead.id}  ${lead.businessName}`);
+  console.log(`Consent email: ${email}`);
+  console.log(`Note: ${note}`);
+  console.log(`Kind: ${written ? "written_reply" : "verbal_call"}`);
+  if (isFreemail(email)) {
+    console.log("Warning: this is a freemail address. Consent makes it lawful — not blocked.");
+  }
+  if (!opts.yes) {
+    const typed = await askLine("Type the business name to record consent: ");
+    if (!confirmBusinessName(typed, String(lead.businessName ?? ""))) {
+      console.error("Aborted — business name did not match.");
+      process.exit(1);
+    }
+  }
+  const updated = await apiRequest<Lead>({
+    base: opts.base,
+    path: `/api/leads/${id}/consent`,
+    method: "POST",
+    apiKey: opts.apiKey,
+    body: { email, note, written },
+  });
+  console.log(
+    `Recorded ${updated.consentStatus} for ${updated.consentEmail} (contactEmail unchanged).`
   );
 }
 
@@ -355,24 +438,39 @@ async function main(): Promise<void> {
     if (command === "preflight") {
       const pf = await apiRequest<{
         ready: boolean;
+        warmReady?: boolean;
         checks: Record<string, boolean>;
         blocking: string[];
+        warmBlocking?: string[];
         warnings: string[];
       }>({
         base,
         path: "/api/outreach/preflight",
         apiKey,
       });
-      console.log(`ready: ${pf.ready ? "yes" : "no"}`);
+      console.log(`cold ready: ${pf.ready ? "yes" : "no"}`);
+      console.log(`warm lane ready: ${pf.warmReady ? "yes" : "no"}`);
       for (const [k, ok] of Object.entries(pf.checks)) {
         console.log(`  ${ok ? "✓" : "✗"} ${k}`);
       }
       console.log(`blocking: ${pf.blocking.length ? pf.blocking.join(", ") : "(none)"}`);
+      console.log(
+        `warm blocking: ${pf.warmBlocking?.length ? pf.warmBlocking.join(", ") : "(none)"}`
+      );
       console.log(`warnings: ${pf.warnings?.length ? pf.warnings.join(", ") : "(none)"}`);
       return;
     }
 
+    if (command === "consent") {
+      await runConsent({ base, apiKey, argv, pos, yes });
+      return;
+    }
+
     if (command === "send") {
+      if (hasFlag(argv, "queue") && !hasFlag(argv, "warm")) {
+        console.error("--queue requires --warm");
+        process.exit(2);
+      }
       await runSend({ base, apiKey, argv, pos, yes });
       return;
     }

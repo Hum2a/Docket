@@ -45,6 +45,8 @@ vi.mock("../outreach-db", () => ({
       businessName: lead.businessName,
       industry: lead.industry,
       observationSignal,
+      hasCustomDraft: Boolean(lead.customSubject?.trim() && lead.customBody?.trim()),
+      demoAuditScore: typeof audit.demo_score === "number" ? audit.demo_score : null,
       templateRequiresIndustry: false,
       templateRequiresLocation: false,
       location: lead.location,
@@ -122,7 +124,14 @@ function baseLead(over: Partial<Lead> = {}): Lead {
     reviewReasons: [],
     customSubject: null,
     customBody: null,
+    observationOverride: null,
+    openingHours: null,
     draftUpdatedAt: null,
+    consentStatus: "none",
+    consentAt: null,
+    consentNote: null,
+    consentEmail: null,
+    warmSendAt: null,
     contactRoute: "email",
     ...over,
   };
@@ -508,7 +517,7 @@ describe("sendLeadOutreach fail-closed", () => {
     expect(body).toContain("The demo's still up");
   });
 
-  it("manual:true skips priority but not PECR / freemail / suppression / demo", async () => {
+  it("manual:true requires ack for priority; never skips PECR / unconsented freemail / suppression / demo", async () => {
     const lowPri = await sendLeadOutreach({
       sql,
       env: baseEnv(),
@@ -518,8 +527,22 @@ describe("sendLeadOutreach fail-closed", () => {
       force: true,
       manual: true,
     });
-    expect(lowPri.reasons).not.toContain("priority_below_threshold");
-    expect(lowPri.dryRun).toBe(true);
+    expect(lowPri.reasons).toContain("priority_below_threshold");
+    expect(insertLeadMessage).not.toHaveBeenCalled();
+
+    insertLeadMessage.mockClear();
+    const acked = await sendLeadOutreach({
+      sql,
+      env: baseEnv(),
+      lead: baseLead({ priorityScore: 1 }),
+      settings: baseSettings({ autoSendThreshold: 8, dryRun: true }),
+      origin: "https://example.com",
+      force: true,
+      manual: true,
+      acknowledgedWarnings: ["priority_below_threshold"],
+    });
+    expect(acked.reasons).not.toContain("priority_below_threshold");
+    expect(acked.dryRun).toBe(true);
     expect(insertLeadMessage).toHaveBeenCalled();
 
     insertLeadMessage.mockClear();
@@ -531,6 +554,7 @@ describe("sendLeadOutreach fail-closed", () => {
       origin: "https://example.com",
       force: true,
       manual: true,
+      acknowledgedWarnings: ["all"],
     });
     expect(sole.reasons).toContain("not_corporate_subscriber");
     expect(insertLeadMessage).not.toHaveBeenCalled();

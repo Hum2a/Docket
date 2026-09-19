@@ -77,10 +77,11 @@ Outreach **reads that expose lead PII require an API key** (unlike job-search GE
 | POST | `/api/leads/bulk` | key |
 | GET | `/api/leads/stats` | key |
 | GET / PATCH / DELETE | `/api/leads/:id` | key |
-| GET | `/api/leads/:id/outreach-preview` | key |
-| GET | `/api/leads/:id/send-readiness` | key |
-| POST | `/api/leads/:id/send` | key — body: `{ manual?, overrideDryRun? }` |
-| POST | `/api/leads/:id/approve` | key — attests PECR/email flags, then force+manual send |
+| GET | `/api/leads/:id/outreach-preview` | key — `?lane=warm` for personal From / consent_email |
+| GET | `/api/leads/:id/send-readiness` | key — `?lane=warm` uses `canWarmSend`. Returns `blocking` labels, `warnings` / `warningLabels`, `ok` if no blockers |
+| POST | `/api/leads/:id/consent` | key — `{ email, note, written? }` |
+| POST | `/api/leads/:id/send` | key — `{ manual?, overrideDryRun?, warm?, queue?, acknowledgedWarnings? }` |
+| POST | `/api/leads/:id/approve` | key — queues the lead then manual send (does not flip PECR flags). Same `acknowledgedWarnings` as send |
 | GET / POST | `/api/leads/:id/notes` | key |
 | DELETE | `/api/lead-notes/:id` | key |
 | GET / POST | `/api/leads/:id/reminders` | key |

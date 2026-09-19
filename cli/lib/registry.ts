@@ -11,6 +11,7 @@ export const LEAD_COMMANDS = [
   "patch",
   "draft",
   "preflight",
+  "consent",
   "send",
 ] as const;
 export type LeadCommand = (typeof LEAD_COMMANDS)[number];
@@ -58,6 +59,8 @@ export const LEAD_PATCH_FIELDS = [
   "sourceRef",
   "customSubject",
   "customBody",
+  "observationOverride",
+  "openingHours",
 ] as const;
 
 export const SETTINGS_FIELDS = [
@@ -89,6 +92,8 @@ export function leadEndpointFor(
       return { method: "PATCH", path: `/api/leads/${id}` };
     case "preflight":
       return { method: "GET", path: "/api/outreach/preflight" };
+    case "consent":
+      return { method: "POST", path: `/api/leads/${id}/consent` };
     case "send":
       return { method: "POST", path: `/api/leads/${id}/send` };
   }

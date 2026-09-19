@@ -1095,9 +1095,52 @@ table.data .status-select {
 }
 
 .lead-readiness.blocked {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+.lead-readiness.warnings {
   background: var(--warn-soft);
   border-color: #fcd34d;
   color: var(--warn);
+}
+
+.lead-readiness .reason-list {
+  margin: 0.35rem 0 0;
+}
+
+.gate-warnings {
+  margin-top: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 10px;
+  background: var(--warn-soft);
+  border: 1px solid #fcd34d;
+  color: var(--warn);
+}
+
+.consent-call {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.consent-call-form {
+  display: grid;
+  gap: 0.55rem;
+  min-width: 16rem;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.consent-channel {
+  border: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 0.85rem;
 }
 
 .lead-action-bar {

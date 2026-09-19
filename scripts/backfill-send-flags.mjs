@@ -1,7 +1,23 @@
 #!/usr/bin/env node
 /**
- * One-shot: auto-enable email_verified + corporate_subscriber for
- * business-domain (non-freemail) contacts, and strip those two review reasons.
+ * RETIRED. This script set corporate_subscriber = true for every
+ * business-domain email, which incorrectly opened the PECR send gate
+ * for sole traders. Use scripts/recheck-corporate.mjs instead.
+ *
+ *   node scripts/recheck-corporate.mjs
+ *   node scripts/recheck-corporate.mjs --apply
+ */
+console.error(
+  "backfill-send-flags.mjs is retired. It would re-flag sole traders as corporate.\n" +
+    "Use: node scripts/recheck-corporate.mjs           # dry run\n" +
+    "     node scripts/recheck-corporate.mjs --apply   # write"
+);
+process.exit(1);
+
+/**
+ * Historical one-shot (no longer executed):
+ * auto-enable email_verified + corporate_subscriber for
+ * business-domain (non-freemail) contacts.
  *
  *   node scripts/backfill-send-flags.mjs
  */

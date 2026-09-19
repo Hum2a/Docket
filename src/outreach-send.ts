@@ -16,14 +16,15 @@ import {
   updateLeadMessageAttempt,
 } from "./outreach-db";
 import { canAutoSend, emailDomain } from "./outreach/canAutoSend";
-import { filterManualHardReasons } from "../shared/manualGate";
+import { classifyGateReasons, manualSendRefusal } from "../shared/manualGate";
+import { hasRecordedConsent } from "./outreach/canWarmSend";
 import {
   absoluteFollowupAt,
   applyCustomInitialCopy,
   renderOutreachCopy,
   resolvePostalAddress,
   resolveTemplateId,
-  type CopyLeadInput,
+  toCopyLead,
 } from "./outreach/copy";
 import { sendResendEmail } from "./email";
 
@@ -67,22 +68,6 @@ export function constantTimeEqualHex(a: string, b: string): boolean {
     acc |= a.charCodeAt(i) ^ b.charCodeAt(i);
   }
   return acc === 0;
-}
-
-function toCopyLead(lead: Lead): CopyLeadInput {
-  return {
-    id: lead.id,
-    businessName: lead.businessName,
-    slug: lead.slug,
-    industry: lead.industry,
-    location: lead.location,
-    contactName: lead.contactName,
-    websiteUrl: lead.websiteUrl,
-    demoUrl: lead.demoUrl,
-    demoExpiresAt: lead.demoExpiresAt,
-    offerAmount: Number(lead.offerAmount || 500),
-    audit: lead.audit || {},
-  };
 }
 
 function messageIdHeader(providerId: string): string {
@@ -164,16 +149,19 @@ export async function sendLeadOutreach(opts: {
   /** Skip auto_send_disabled / paused / daily_cap. Does not affect dry_run. */
   force?: boolean;
   /**
-   * Manual send from CLI/UI / Approve: like force, skips priority + human-reviewed
-   * business_name_implausible. Never skips PECR, freemail, suppression,
-   * verified-email, demo-ready, or postal_address_invalid.
+   * Manual send from CLI/UI / Approve: skips operational deferrals.
+   * Quality reasons require acknowledgedWarnings. Never skips PECR,
+   * unconsented freemail, suppression, demo-ready, or postal footer.
    */
   manual?: boolean;
+  /** Warning codes the operator ticked. Ignored for blockers. */
+  acknowledgedWarnings?: string[];
   /** Only flag that allows a live Resend send while settings.dryRun is true. */
   overrideDryRun?: boolean;
   templateId?: string;
 }): Promise<SendLeadResult> {
   const { sql, env, lead, settings, origin, force, manual, overrideDryRun } = opts;
+  const acknowledgedWarnings = opts.acknowledgedWarnings ?? [];
   const templateId = resolveTemplateId(lead.followupStep, opts.templateId);
   const todayCount = await countSentToday(sql);
   const dryRunFlag = Boolean(settings.dryRun) && !overrideDryRun;
@@ -222,12 +210,16 @@ export async function sendLeadOutreach(opts: {
       { ...settingsGateInput(settings), autoSendEnabled: true, dryRun: false, pausedUntil: null },
       0
     );
-    const hardReview = manual
-      ? filterManualHardReasons(hard.reasons)
+    const classified = classifyGateReasons(hard.reasons, {
+      hasConsent: hasRecordedConsent(lead),
+      skipOperational: Boolean(manual),
+    });
+    const refusal = manual
+      ? manualSendRefusal(classified, acknowledgedWarnings)
       : hard.reasons.filter((r) => r !== "daily_cap_reached");
-    if (hardReview.length > 0) {
-      await setLeadReviewReasons(sql, lead.id, hardReview);
-      return { sent: false, dryRun: dryRunFlag, deferred: false, reasons: hardReview };
+    if (refusal.length > 0) {
+      await setLeadReviewReasons(sql, lead.id, refusal);
+      return { sent: false, dryRun: dryRunFlag, deferred: false, reasons: refusal };
     }
   }
 
@@ -376,6 +368,7 @@ export async function sendLeadOutreach(opts: {
       status: input.status,
       sentAt: input.sentAt ?? null,
       error: input.error ?? null,
+      acknowledgedWarnings,
     };
     if (retryMessageId != null) {
       return updateLeadMessageAttempt(sql, retryMessageId, payload);

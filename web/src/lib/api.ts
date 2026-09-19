@@ -93,12 +93,16 @@ export type PreflightCheckKey =
   | "postal_address_set"
   | "unsubscribe_key_set"
   | "resend_key_set"
-  | "reply_to_set";
+  | "reply_to_set"
+  | "personal_from_set"
+  | "personal_from_domain_verified";
 
 export type OutreachPreflight = {
   ready: boolean;
+  warmReady?: boolean;
   checks: Record<PreflightCheckKey, boolean>;
   blocking: PreflightCheckKey[];
+  warmBlocking?: PreflightCheckKey[];
   warnings: PreflightCheckKey[];
 };
 
@@ -279,15 +283,17 @@ export const api = {
     });
   },
   getLead: (id: number) => request<Lead>(`/api/leads/${id}`, { auth: true }),
-  getOutreachPreview: (id: number) =>
-    request<{
+  getOutreachPreview: (id: number, opts?: { lane?: "warm" }) => {
+    const qs = opts?.lane === "warm" ? "?lane=warm" : "";
+    return request<{
       subject: string;
       text: string;
       bodyBeforeFooter: string;
       templateId: string;
       source: "custom" | "generated";
       signal: string;
-    }>(`/api/leads/${id}/outreach-preview`, { auth: true }),
+    }>(`/api/leads/${id}/outreach-preview${qs}`, { auth: true });
+  },
   createLead: (body: CreateLead) =>
     request<Lead>("/api/leads", { method: "POST", auth: true, body: JSON.stringify(body) }),
   updateLead: (id: number, body: UpdateLead) =>
@@ -334,21 +340,41 @@ export const api = {
 
   listLeadMessages: (id: number) =>
     request<LeadMessage[]>(`/api/leads/${id}/messages`, { auth: true }),
-  sendLead: (id: number, body?: { manual?: boolean; overrideDryRun?: boolean }) =>
+  sendLead: (
+    id: number,
+    body?: {
+      manual?: boolean;
+      overrideDryRun?: boolean;
+      warm?: boolean;
+      queue?: boolean;
+      acknowledgedWarnings?: string[];
+    }
+  ) =>
     request<{ ok?: boolean; sent?: boolean; dryRun?: boolean; reasons?: string[]; error?: string; messageId?: number }>(
       `/api/leads/${id}/send`,
       { method: "POST", auth: true, body: JSON.stringify(body ?? { manual: true }) }
     ),
-  getSendReadiness: (id: number) =>
-    request<{
+  getSendReadiness: (id: number, opts?: { lane?: "warm" }) => {
+    const qs = opts?.lane === "warm" ? "?lane=warm" : "";
+    return request<{
       ok: boolean;
       reasons: string[];
       labels: string[];
+      warnings?: string[];
+      warningLabels?: string[];
+      blockingReasons?: string[];
       preflightReady: boolean;
       preflightBlocking: string[];
       dryRun: boolean;
       blocking: string[];
-    }>(`/api/leads/${id}/send-readiness`, { auth: true }),
+    }>(`/api/leads/${id}/send-readiness${qs}`, { auth: true });
+  },
+  recordConsent: (id: number, body: { email: string; note: string; written?: boolean }) =>
+    request<Lead>(`/api/leads/${id}/consent`, {
+      method: "POST",
+      auth: true,
+      body: JSON.stringify(body),
+    }),
   approveLead: (id: number) =>
     request<{
       approved: boolean;

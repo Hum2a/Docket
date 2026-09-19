@@ -48,18 +48,23 @@ Filter **Demo live** on the List page for an auth’d index of open demos. Do no
 
 Implemented in `src/outreach/canAutoSend.ts` (+ quality helpers). High level:
 
-| Gate | Auto | Manual / Approve |
-| --- | --- | --- |
-| PECR corporate subscriber | Required | Required* |
-| Verified non-freemail email | Required | Required* |
-| Demo ready + URL | Required | Required |
-| Postal address (footer) | Required | Required |
-| Priority threshold | Required | Skipped (manual) |
-| Dry run / pause / daily cap | Defers | Skipped (manual/force) |
-| `business_name_implausible` | Blocks | **Overridable** (human reviewed preview) |
-| Other quality hard blocks | Blocks | Blocks |
+| Gate | Auto / cold | Manual / Approve | Warm (`--warm`) |
+| --- | --- | --- | --- |
+| PECR corporate subscriber | Required | Required (or recorded consent on warm) | Not used (recorded consent) |
+| Verified non-freemail email | Required | Unverified / consented freemail = **warning** (tick-box) | Consent email (freemail is a warning) |
+| Demo ready + URL | Required | Required | Required |
+| Custom draft | Optional | Optional; skips generic observation | Required |
+| Postal address (footer) | Required | Required | Required |
+| Priority threshold | Required | **Warning** (tick-box) | Not used |
+| Dry run / pause / daily cap | Defers | Skipped (manual/force) | Cron holds if dry run |
+| Quality (generic observation, name, location, demo score) | Blocks | **Warning** (tick-box) | Demo score / freemail warnings |
+| Suppressions | Blocks | Blocks | Blocks |
 
-\*Approve attests corporate + email-verified before send. Freemail remains blocked.
+Sole traders cannot be flipped corporate by Approve, email domain, or `--yes`. Use **Got consent on a call** on the lead page, then send on the warm lane.
+
+Quality warnings must be acknowledged (`acknowledgedWarnings` on send, or CLI `--ack-warnings`). Blockers have no tick-box.
+
+Warm sends use `OUTREACH_PERSONAL_FROM` and never copy `consent_email` into `contact_email`. See [sending-setup.md](sending-setup.md).
 
 Copy is plain text only (no HTML). Observation lines come from audit signals, not an LLM. The system appends postal address and unsubscribe link.
 
@@ -85,8 +90,8 @@ Configured in `wrangler.toml`:
 | Cron | Job |
 | --- | --- |
 | `0 8 * * *` | Job reminder digest |
-| `0 9 * * 1-5` | Outreach autosend |
-| `0 10 * * 1-5` | Outreach follow-up sequence |
+| `0 9 * * 1-5` | Queued warm sends, then cold autosend |
+| `0 10 * * 1-5` | Outreach follow-up sequence (skips consented leads) |
 
 Manual triggers (API key): `POST /api/outreach/autosend`, `POST /api/outreach/sequence`.
 
@@ -102,3 +107,4 @@ Manual triggers (API key): `POST /api/outreach/autosend`, `POST /api/outreach/se
 - [API](API.md) — endpoints and auth
 - [CLI](CLI.md) — `lead` / `settings`
 - [Setup](SETUP.md) — secrets and deploy
+- [Sending setup](sending-setup.md) — warm / cold DNS and mail-router

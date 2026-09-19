@@ -36,8 +36,8 @@ npm run dev                      # Vite :5173 + Worker :8787
 Production:
 
 ```bash
-npm run secrets:sync             # push secrets to Cloudflare
-npm run deploy                   # build SPA + wrangler deploy
+npm run deploy:full              # merge env, sync secrets, migrate, deploy
+npm run deploy                   # build SPA + wrangler deploy only
 ```
 
 Full setup, secrets, and migration notes: **[docs/SETUP.md](docs/SETUP.md)**
@@ -51,6 +51,8 @@ Full setup, secrets, and migration notes: **[docs/SETUP.md](docs/SETUP.md)**
 | `npm run dev` | Vite + Wrangler (local) |
 | `npm run build` / `build:web` | Build SPA → `dist/` |
 | `npm run deploy` | Build + deploy Worker |
+| `npm run deploy:full` | Merge env keys, sync secrets, migrate, deploy |
+| `npm run env:merge` | Add missing keys from `.dev.vars.example` |
 | `npm run typecheck` | Typecheck Worker, web, and CLI |
 | `npm test` | Vitest |
 | `npm run db:migrate` / `db:status` / `db:ping` | Neon migrations |
