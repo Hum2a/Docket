@@ -440,7 +440,6 @@ export function OutreachDetailPage() {
         scoreReason: lead.scoreReason,
         status: lead.status,
         offerAmount: lead.offerAmount,
-        corporateSubscriber: lead.corporateSubscriber,
         emailVerified: lead.emailVerified,
       });
       setLead(updated);
@@ -661,9 +660,7 @@ export function OutreachDetailPage() {
             className="btn btn-primary"
             onDone={() => void load()}
           />
-          {readiness?.reasons.some(
-            (r) => r === "not_corporate_subscriber" || r === "missing_contact_email"
-          ) ? (
+          {readiness?.reasons.some((r) => r === "missing_contact_email") ? (
             <ConsentCallForm
               lead={lead}
               onLeadUpdated={(updated) => {
@@ -877,16 +874,8 @@ export function OutreachDetailPage() {
             />
           </div>
 
-          <div className="pecr-block">
-            <span className="pecr-label">Send flags (PECR)</span>
-            <label className="checkbox-row">
-              <input
-                type="checkbox"
-                checked={lead.corporateSubscriber}
-                onChange={(e) => setLead({ ...lead, corporateSubscriber: e.target.checked })}
-              />
-              Corporate subscriber (PECR)
-            </label>
+          <div className="send-flags-block">
+            <span className="send-flags-label">Send flags</span>
             <label className="checkbox-row">
               <input
                 type="checkbox"

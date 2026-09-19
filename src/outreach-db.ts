@@ -8,11 +8,7 @@ import { normalizeBusinessKey, planBulkUpserts } from "./outreach/bulkUpsert";
 import { canAutoSend } from "./outreach/canAutoSend";
 import { getPersistedOutreach, pickObservation } from "./outreach/copy";
 import { demoAuditScore } from "./outreach/qualityGate";
-import {
-  isIndividualSubscriber,
-  shouldAutoCorporate,
-  shouldAutoVerifyEmail,
-} from "./outreach/sendFlags";
+import { shouldAutoVerifyEmail } from "./outreach/sendFlags";
 import {
   clampLeadLimit,
   decodeLeadCursor,
@@ -317,11 +313,7 @@ function uniqueSlug(base: string, suffix: string): string {
 export async function createLead(sql: Sql, input: CreateLead): Promise<Lead> {
   const slug = input.slug || slugifyName(input.businessName);
   const entityType = input.entityType ?? "unknown";
-  const corporate = shouldAutoCorporate({
-    entityType,
-    companiesHouseNumber: input.companiesHouseNumber,
-    chStatus: input.chStatus,
-  });
+  const corporate = Boolean(input.corporateSubscriber);
   const emailVerified =
     Boolean(input.emailVerified) || shouldAutoVerifyEmail(input.contactEmail);
   const demoStatus = input.demoStatus ?? "none";
@@ -392,10 +384,7 @@ export async function updateLead(sql: Sql, id: number, updates: UpdateLead): Pro
     add("companies_house_number", updates.companiesHouseNumber);
   }
   if (updates.entityType !== undefined) add("entity_type", updates.entityType);
-  const nextEntity = updates.entityType ?? existing.entityType;
-  if (isIndividualSubscriber(nextEntity)) {
-    add("corporate_subscriber", false);
-  } else if (updates.corporateSubscriber !== undefined) {
+  if (updates.corporateSubscriber !== undefined) {
     add("corporate_subscriber", updates.corporateSubscriber);
   }
   if (updates.chStatus !== undefined) add("ch_status", updates.chStatus);
@@ -548,13 +537,6 @@ export async function bulkUpsertLeads(
           skipped++;
           continue;
         }
-        // Prefer auto / existing true over pipeline false for PECR + verified flags.
-        const corporateSubscriber = shouldAutoCorporate({
-          entityType: input.entityType ?? existing.entityType,
-          companiesHouseNumber:
-            input.companiesHouseNumber ?? existing.companiesHouseNumber,
-          chStatus: input.chStatus ?? existing.chStatus,
-        });
         const emailVerified =
           Boolean(input.emailVerified) ||
           existing.emailVerified ||
@@ -562,7 +544,6 @@ export async function bulkUpsertLeads(
         const { status: _s, ...safe } = input;
         const lead = await updateLead(sql, plan.existingId, {
           ...safe,
-          corporateSubscriber,
           emailVerified,
         });
         if (lead) updated.push(lead.id);
@@ -1213,7 +1194,6 @@ export function leadGateInput(
     }).signal;
   return {
     priorityScore: lead.priorityScore,
-    corporateSubscriber: lead.corporateSubscriber,
     emailVerified: lead.emailVerified,
     contactEmail: lead.contactEmail,
     suppressed: lead.suppressed,

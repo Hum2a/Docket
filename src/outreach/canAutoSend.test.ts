@@ -13,7 +13,6 @@ import { mergeLeadUpdate, planBulkUpserts } from "./bulkUpsert";
 
 const baseLead: LeadGateInput = {
   priorityScore: 9,
-  corporateSubscriber: true,
   emailVerified: true,
   contactEmail: "office@acme-accountants.co.uk",
   suppressed: false,
@@ -38,17 +37,10 @@ const baseSettings: OutreachSettingsGateInput = {
 };
 
 describe("canAutoSend", () => {
-  it("allows a fully eligible corporate lead", () => {
+  it("allows a fully eligible lead", () => {
     const r = canAutoSend(baseLead, baseSettings, 0);
     expect(r.ok).toBe(true);
     expect(r.reasons).toEqual([]);
-  });
-
-  it("refuses a sole trader / non-corporate subscriber", () => {
-    const r = canAutoSend({ ...baseLead, corporateSubscriber: false }, baseSettings, 0);
-    expect(r.ok).toBe(false);
-    expect(r.reasons).toContain("not_corporate_subscriber");
-    expect(r.deferred).toBe(false);
   });
 
   it("refuses a suppressed address", () => {
@@ -298,7 +290,7 @@ describe("quality hard blocks (Task 17)", () => {
     expect(fromModal.text).toBe(fromRender.text);
     expect(fromModal.text).toContain("--\nHumza Butt ·");
     expect(sendConfirmBlocked(["business_name_implausible"])).toBe(false);
-    expect(sendConfirmBlocked(["not_corporate_subscriber"])).toBe(true);
+    expect(sendConfirmBlocked(["lead_suppressed"])).toBe(true);
     expect(sendConfirmBlocked([])).toBe(false);
   });
 });

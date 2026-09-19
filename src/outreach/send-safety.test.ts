@@ -35,7 +35,6 @@ vi.mock("../outreach-db", () => ({
     }
     return {
       priorityScore: lead.priorityScore,
-      corporateSubscriber: lead.corporateSubscriber,
       emailVerified: lead.emailVerified,
       contactEmail: lead.contactEmail,
       suppressed: lead.suppressed,
@@ -315,25 +314,13 @@ describe("sendLeadOutreach fail-closed", () => {
     warn.mockRestore();
   });
 
-  it("allowPrimarySendingDomain does not weaken PECR, freemail, or suppression", async () => {
+  it("allowPrimarySendingDomain does not weaken freemail or suppression", async () => {
     const primaryFrom = "Outreach <outreach@mail.humza-butt.space>";
     const settings = baseSettings({
       fromAddress: primaryFrom,
       allowPrimarySendingDomain: true,
     });
 
-    const soleTrader = await sendLeadOutreach({
-      sql,
-      env: baseEnv(),
-      lead: baseLead({ corporateSubscriber: false }),
-      settings,
-      origin: "https://example.com",
-      force: true,
-    });
-    expect(soleTrader.reasons).toContain("not_corporate_subscriber");
-    expect(insertLeadMessage).not.toHaveBeenCalled();
-
-    insertLeadMessage.mockClear();
     const freemail = await sendLeadOutreach({
       sql,
       env: baseEnv(),
@@ -425,24 +412,13 @@ describe("sendLeadOutreach fail-closed", () => {
     expect(body).toContain("Humza Butt · 12 Example Road, Croydon CR0 4JF");
   });
 
-  it("custom_body does not weaken PECR, freemail, suppression, or demo gates", async () => {
+  it("custom_body does not weaken freemail, suppression, or demo gates", async () => {
     const withDraft = {
       customBody: "Hi,\n\nHand-written.\n\nHumza",
       customSubject: "custom subject",
     };
 
     insertLeadMessage.mockClear();
-    const sole = await sendLeadOutreach({
-      sql,
-      env: baseEnv(),
-      lead: baseLead({ ...withDraft, corporateSubscriber: false }),
-      settings: baseSettings(),
-      origin: "https://example.com",
-      force: true,
-    });
-    expect(sole.reasons).toContain("not_corporate_subscriber");
-    expect(insertLeadMessage).not.toHaveBeenCalled();
-
     const freemail = await sendLeadOutreach({
       sql,
       env: baseEnv(),
@@ -517,7 +493,7 @@ describe("sendLeadOutreach fail-closed", () => {
     expect(body).toContain("The demo's still up");
   });
 
-  it("manual:true requires ack for priority; never skips PECR / unconsented freemail / suppression / demo", async () => {
+  it("manual:true requires ack for priority; never skips unconsented freemail / suppression / demo", async () => {
     const lowPri = await sendLeadOutreach({
       sql,
       env: baseEnv(),
@@ -556,9 +532,10 @@ describe("sendLeadOutreach fail-closed", () => {
       manual: true,
       acknowledgedWarnings: ["all"],
     });
-    expect(sole.reasons).toContain("not_corporate_subscriber");
-    expect(insertLeadMessage).not.toHaveBeenCalled();
+    expect(sole.reasons).not.toContain("not_corporate_subscriber");
+    expect(insertLeadMessage).toHaveBeenCalled();
 
+    insertLeadMessage.mockClear();
     const freemail = await sendLeadOutreach({
       sql,
       env: baseEnv(),

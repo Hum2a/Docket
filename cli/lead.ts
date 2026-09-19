@@ -42,7 +42,6 @@ type Lead = Record<string, unknown> & {
   priorityScore?: number | null;
   status?: string;
   demoStatus?: string;
-  corporateSubscriber?: boolean;
   contactEmail?: string | null;
   customBody?: string | null;
   customSubject?: string | null;
@@ -74,7 +73,7 @@ Options:
   --dry        Preview send only — never contacts Resend
   --warm       Consent lane: send to consent_email from personal From
   --queue      Warm only: schedule next weekday 09:00 Europe/London
-  --ack-warnings=a,b  Acknowledge quality warnings (or all). Never skips PECR.
+  --ack-warnings=a,b  Acknowledge quality warnings (or all). Never skips suppressions / demo-not-ready.
 
 API_KEY is read from .dev.vars or the environment — never pass it on the command line.
 Send is one lead per invocation (no --all / batch).`);
@@ -120,10 +119,9 @@ function printListTable(leads: Lead[]): void {
     pri: l.priorityScore != null ? Number(l.priorityScore).toFixed(1) : "—",
     status: String(l.status ?? ""),
     demo: String(l.demoStatus ?? ""),
-    corp: l.corporateSubscriber ? "Y" : "n",
     email: l.contactEmail ? "Y" : "n",
   }));
-  const header = ["id", "name", "pri", "status", "demo", "corp", "email"];
+  const header = ["id", "name", "pri", "status", "demo", "email"];
   const widths = header.map((h) =>
     Math.max(h.length, ...rows.map((r) => String((r as Record<string, unknown>)[h]).length))
   );
@@ -139,7 +137,6 @@ function printListTable(leads: Lead[]): void {
         r.pri,
         r.status,
         r.demo,
-        r.corp,
         r.email,
       ])
     );

@@ -1,6 +1,6 @@
 /**
  * Manual / Approve send: operational deferrals are skipped; quality reasons
- * become acknowledgable warnings. PECR, suppressions, missing recipient,
+ * become acknowledgable warnings. Suppressions, missing recipient,
  * demo-not-ready, and the postal/unsubscribe footer are never skippable.
  */
 
@@ -88,9 +88,9 @@ export const GATE_REASON_LABELS: Record<string, string> = {
   daily_cap_reached: "Daily send cap reached. Wait until tomorrow or raise the cap.",
   priority_below_threshold: "Priority is below the auto-send threshold. Tick I've checked this if you still want to send.",
   not_corporate_subscriber:
-    "Sole trader or unconfirmed company: get consent on a call first, or add a Companies House number if they're a Ltd.",
+    "Legacy flag — this no longer blocks sending.",
   freemail_address:
-    "Freemail: lawful only with recorded consent (warm send). Corporate sends need a work domain.",
+    "Freemail address: use a work domain for cold send, or record consent and send on the warm lane.",
   email_unverified:
     "Email isn't verified: tick I've checked this if you confirmed it, or record consent.",
   missing_contact_email:

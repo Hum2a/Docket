@@ -81,16 +81,15 @@ describe("manual send CLI helpers", () => {
     expect(formatGateResult([])).toBe("Gate: PASS");
   });
 
-  it("gate result WARN for quality warnings and FAIL for PECR", () => {
+  it("gate result WARN for quality warnings and FAIL for suppressions", () => {
     expect(formatGateResult([], ["priority_below_threshold"])).toMatch(/^Gate: WARN/);
-    expect(formatGateResult(["not_corporate_subscriber"])).toMatch(/^Gate: FAIL/);
+    expect(formatGateResult(["lead_suppressed"])).toMatch(/^Gate: FAIL/);
   });
 
-  it("--yes skip list does not include PECR / freemail / suppression / demo", () => {
+  it("--yes skip list does not include freemail / suppression / demo", () => {
     const hard = filterManualHardReasons([
       "priority_below_threshold",
       "business_name_implausible",
-      "not_corporate_subscriber",
       "freemail_address",
       "lead_suppressed",
       "email_unverified",
@@ -99,7 +98,6 @@ describe("manual send CLI helpers", () => {
     expect(hard).toEqual([
       "priority_below_threshold",
       "business_name_implausible",
-      "not_corporate_subscriber",
       "freemail_address",
       "lead_suppressed",
       "email_unverified",
@@ -107,7 +105,6 @@ describe("manual send CLI helpers", () => {
     ]);
     expect(MANUAL_SKIP_REASONS).not.toContain("business_name_implausible");
     for (const r of [
-      "not_corporate_subscriber",
       "freemail_address",
       "lead_suppressed",
       "email_unverified",

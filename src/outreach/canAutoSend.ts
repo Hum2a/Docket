@@ -1,4 +1,4 @@
-/** PECR corporate auto-send gate. Freemail helpers live in shared/freemail.ts. */
+/** Outreach send gate. Freemail helpers live in shared/freemail.ts. */
 
 export {
   FREEMAIL_DOMAINS,
@@ -16,7 +16,6 @@ import {
 
 export type LeadGateInput = {
   priorityScore: number | null;
-  corporateSubscriber: boolean;
   emailVerified: boolean;
   contactEmail: string | null;
   suppressed: boolean;
@@ -67,13 +66,7 @@ export type AutoSendResult = {
   reasons: string[];
 };
 
-/**
- * PECR (UK): unsolicited marketing email may be sent to corporate subscribers
- * (limited companies, LLPs, Scottish partnerships, public bodies) without prior
- * consent. Sole traders and unincorporated partnerships are individual
- * subscribers and require consent or soft opt-in. Never auto-send unless
- * `corporateSubscriber` is confirmed true — do not "simplify" this rule away.
- */
+/** Quality, demo, identity, and suppression checks for outreach sends. */
 export function canAutoSend(
   lead: LeadGateInput,
   settings: OutreachSettingsGateInput,
@@ -107,12 +100,7 @@ export function canAutoSend(
     reasons.push("priority_below_threshold");
   }
 
-  // 4 — corporate subscriber (PECR)
-  if (!lead.corporateSubscriber) {
-    reasons.push("not_corporate_subscriber");
-  }
-
-  // 5 — verified non-freemail email
+  // 4 — verified non-freemail email
   const email = lead.contactEmail?.trim() || "";
   if (!email) {
     reasons.push("missing_contact_email");
@@ -122,28 +110,28 @@ export function canAutoSend(
     reasons.push("freemail_address");
   }
 
-  // 6 — not suppressed (caller must also check suppressions table)
+  // 5 — not suppressed (caller must also check suppressions table)
   if (lead.suppressed) {
     reasons.push("lead_suppressed");
   }
 
-  // 7 — demo ready
+  // 6 — demo ready
   if (lead.demoStatus !== "ready" || !lead.demoUrl?.trim()) {
     reasons.push("demo_not_ready");
   }
 
-  // 8 — status gate
+  // 7 — status gate
   if (lead.status !== "demo_ready" && lead.status !== "queued") {
     reasons.push("status_not_sendable");
   }
 
-  // 9 — daily cap
+  // 8 — daily cap
   if (todaySentCount >= settings.dailySendCap) {
     reasons.push("daily_cap_reached");
     deferred = true;
   }
 
-  // 10 — quality (autosend hard-block; manual send treats as warnings)
+  // 9 — quality (autosend hard-block; manual send treats as warnings)
   if (isBusinessNameImplausible(lead.businessName, lead.location)) {
     reasons.push("business_name_implausible");
   }

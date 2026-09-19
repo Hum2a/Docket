@@ -36,12 +36,7 @@ export function normalizeBusinessKey(name: string, postcode?: string | null): st
   return `${name.trim().toLowerCase()}|${(postcode ?? "").trim().toLowerCase()}`;
 }
 
-const NO_DOWNGRADE = new Set([
-  "corporateSubscriber",
-  "corporate_subscriber",
-  "emailVerified",
-  "email_verified",
-]);
+const NO_DOWNGRADE = new Set(["emailVerified", "email_verified"]);
 
 /** Fields the pipeline may update on an existing lead. */
 export function mergeLeadUpdate(
@@ -52,21 +47,8 @@ export function mergeLeadUpdate(
   for (const [key, value] of Object.entries(incoming)) {
     if (value === undefined) continue;
     if (PROTECTED.has(key)) continue;
-    // Re-pushes must not clear PECR / verified flags a human (or prior push) set,
-    // except sole traders / partnerships — those must never stay corporate.
+    // Re-pushes must not clear a verified-email flag a human (or prior push) set.
     if (NO_DOWNGRADE.has(key) && value === false && existing[key] === true) {
-      const incomingEntity = String(
-        incoming.entityType ?? incoming.entity_type ?? ""
-      ).toLowerCase();
-      const corporateKey =
-        key === "corporateSubscriber" || key === "corporate_subscriber";
-      if (
-        corporateKey &&
-        (incomingEntity === "sole_trader" || incomingEntity === "partnership")
-      ) {
-        out[key] = value;
-        continue;
-      }
       continue;
     }
     out[key] = value;

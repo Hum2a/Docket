@@ -9,13 +9,12 @@ import {
 } from "./manualGate";
 
 describe("classifyGateReasons", () => {
-  it("keeps PECR and missing email as blocking", () => {
+  it("keeps missing email as blocking", () => {
     const { blocking, warnings } = classifyGateReasons([
-      "not_corporate_subscriber",
       "missing_contact_email",
       "generic_observation",
     ]);
-    expect(blocking).toEqual(["not_corporate_subscriber", "missing_contact_email"]);
+    expect(blocking).toEqual(["missing_contact_email"]);
     expect(warnings).toEqual(["generic_observation"]);
   });
 
@@ -39,10 +38,10 @@ describe("classifyGateReasons", () => {
   });
 
   it("never lets ack clear a blocker", () => {
-    const classified = classifyGateReasons(["not_corporate_subscriber", "generic_observation"]);
-    expect(manualSendRefusal(classified, ["all"])).toEqual(["not_corporate_subscriber"]);
-    expect(manualSendRefusal(classified, ["not_corporate_subscriber", "generic_observation"])).toEqual(
-      ["not_corporate_subscriber"]
+    const classified = classifyGateReasons(["lead_suppressed", "generic_observation"]);
+    expect(manualSendRefusal(classified, ["all"])).toEqual(["lead_suppressed"]);
+    expect(manualSendRefusal(classified, ["lead_suppressed", "generic_observation"])).toEqual(
+      ["lead_suppressed"]
     );
   });
 
@@ -61,9 +60,8 @@ describe("unacknowledgedWarnings", () => {
 });
 
 describe("operational skip list", () => {
-  it("does not silently skip PECR, freemail, suppression, unverified, or demo", () => {
+  it("does not silently skip freemail, suppression, unverified, or demo", () => {
     for (const r of [
-      "not_corporate_subscriber",
       "freemail_address",
       "lead_suppressed",
       "email_unverified",
@@ -72,8 +70,8 @@ describe("operational skip list", () => {
       expect(MANUAL_SKIP_REASONS).not.toContain(r);
     }
     expect(WARNING_REASONS).toContain("email_unverified");
-    expect(filterManualHardReasons(["auto_send_disabled", "not_corporate_subscriber"])).toEqual([
-      "not_corporate_subscriber",
+    expect(filterManualHardReasons(["auto_send_disabled", "lead_suppressed"])).toEqual([
+      "lead_suppressed",
     ]);
   });
 });

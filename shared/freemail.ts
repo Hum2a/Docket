@@ -1,4 +1,4 @@
-/** Freemail / consumer mailbox domains — not valid for PECR corporate auto-send. */
+/** Freemail / consumer mailbox domains — blocked on cold send without recorded consent. */
 
 export const FREEMAIL_DOMAINS = new Set([
   "gmail.com",

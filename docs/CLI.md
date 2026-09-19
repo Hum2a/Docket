@@ -34,7 +34,7 @@ Global options:
 | `--warm` | Consent lane: personal From → consent_email |
 | `--queue` | Warm only: next weekday 09:00 Europe/London |
 | `--override-dry-run` | Allow a live send while settings `dryRun` is true |
-| `--ack-warnings=a,b` | Acknowledge quality warnings (or `all`). Never skips PECR / suppressions / demo-not-ready |
+| `--ack-warnings=a,b` | Acknowledge quality warnings (or `all`). Never skips suppressions / demo-not-ready |
 | `--help` | Usage |
 
 **Send is single-lead only** — no `--all`, no batch. Autosend and sequence are API-only, not exposed here.
@@ -50,7 +50,6 @@ npm run lead -- send 95 --dry
 npm run lead -- send 95 --ack-warnings=generic_observation,email_unverified
 npm run lead -- consent 104 --email=leslie@example.com --note="asked for the link"
 npm run lead -- send 104 --warm --dry
-node scripts/recheck-corporate.mjs
 ```
 
 ---

@@ -28,7 +28,7 @@ export const CONTACT_ROUTE_META: Record<
     label: "Freemail",
     className: "contact-route contact-route-freemail",
     title:
-      "Freemail — cold send is blocked. Lawful only with recorded consent (warm lane).",
+      "Freemail — cold send is blocked. Record consent and use the warm lane, or use a work-domain address.",
   },
   phone: { label: "Phone", className: "contact-route contact-route-phone" },
   form: { label: "Form", className: "contact-route contact-route-form" },

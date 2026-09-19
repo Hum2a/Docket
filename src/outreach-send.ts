@@ -150,7 +150,7 @@ export async function sendLeadOutreach(opts: {
   force?: boolean;
   /**
    * Manual send from CLI/UI / Approve: skips operational deferrals.
-   * Quality reasons require acknowledgedWarnings. Never skips PECR,
+   * Quality reasons require acknowledgedWarnings. Never skips
    * unconsented freemail, suppression, demo-ready, or postal footer.
    */
   manual?: boolean;

@@ -620,7 +620,7 @@ export function bodyWordCountBeforeFooter(text: string): number {
   return wordCount(cut);
 }
 
-/** Postal address is required before any outreach send (PECR identity). */
+/** Postal address is required before any outreach send (identity footer). */
 export function resolvePostalAddress(
   settings: { postalAddress?: string | null },
   env: { OUTREACH_POSTAL_ADDRESS?: string }

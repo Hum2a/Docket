@@ -2,7 +2,7 @@
  * Manual send CLI helpers.
  *
  * Safeguards: print full email, typed business-name confirm, no batch mode.
- * --yes skips the typed confirm only — never PECR / freemail / suppression / demo gates.
+ * --yes skips the typed confirm only — never freemail / suppression / demo gates.
  */
 
 import { labelGateReason } from "../../shared/manualGate";

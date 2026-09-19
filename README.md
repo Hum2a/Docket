@@ -7,7 +7,7 @@ Personal job application tracker and B2B outreach CRM, served as a React SPA fro
 | Mode | What it does |
 | --- | --- |
 | **Job Search** | Kanban board, applications, notes, reminders, document store, digest emails |
-| **Outreach** | Lead pipeline, demo-gated sends, PECR-safe autosend, follow-ups, reply ingest |
+| **Outreach** | Lead pipeline, demo-gated sends, autosend, follow-ups, reply ingest |
 
 ---
 
